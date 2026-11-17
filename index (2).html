@@ -1,0 +1,974 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,interactive-widget=resizes-content"><meta name="theme-color" content="#16131d"><style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);box-sizing:border-box}body{margin:0;font:14px system-ui,sans-serif}img{max-width:100%}[hidden]{display:none!important}</style></head><body><title>Storyloom</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<style>
+/* Layout: drawer sidebar (persistent ≥900px) + full-height chat column; every color is a user-editable token */
+:root{
+  --bg:#16131d; --surface:#211d2b; --surface2:#2b2638; --border:#3b344a;
+  --text:#e9e4f1; --muted:#9e96b0; --accent:#c9a46a; --accentText:#1b1622;
+  --userBubble:#2d2a40; --charBubble:#1f1b29; --italics:#b9abd9; --quote:#f1cf8f; --bold:#ffffff;
+  --font-ui:"Manrope",system-ui,sans-serif; --font-chat:"Literata",Georgia,serif; --fs:16px;
+  --bubbleAlpha:0.92; --radius:14px;
+  --bgImage:none; --sidebarImage:none; --headerImage:none; --buttonImage:none; --sendImage:none;
+  --dim:0.55;
+  color-scheme:dark;
+}
+html,body{height:100%}
+body{background:var(--bg);color:var(--text);font-family:var(--font-ui);font-size:15px;overflow:hidden;-webkit-tap-highlight-color:transparent}
+*{box-sizing:border-box}
+button,input,select,textarea{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+#app{display:grid;grid-template-columns:1fr;height:100%;position:relative}
+@media (min-width:900px){#app{grid-template-columns:300px 1fr}}
+
+/* ---------- sidebar ---------- */
+#sidebar{background:var(--surface);background-image:var(--sidebarImage);background-size:cover;background-position:center;
+  display:flex;flex-direction:column;min-height:0;border-right:1px solid var(--border);
+  padding-left:env(safe-area-inset-left,0px)}
+@media (max-width:899px){
+  #sidebar{position:fixed;inset:0 auto 0 0;width:min(86vw,330px);z-index:40;transform:translateX(-102%);transition:transform .22s ease;
+    padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+  #sidebar.open{transform:none;box-shadow:0 0 40px rgba(0,0,0,.5)}
+}
+.sb-inner{display:flex;flex-direction:column;gap:12px;padding:16px 14px 10px;min-height:0;flex:1}
+.brand{font-family:var(--font-chat);font-size:22px;font-weight:600;letter-spacing:.01em;display:flex;align-items:center;gap:8px}
+.brand .mark{width:26px;height:26px;border-radius:7px;background:var(--accent);color:var(--accentText);display:grid;place-items:center;font-size:15px}
+#chatSearch{width:100%;padding:9px 12px;border-radius:10px;border:1px solid var(--border);background:var(--bg)}
+#chatList{flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:2px;margin:0 -6px;padding:0 6px;min-height:0}
+.chat-item{display:flex;gap:10px;align-items:center;padding:9px 8px;border-radius:10px;border:0;background:transparent;text-align:left;width:100%}
+.chat-item:hover{background:color-mix(in srgb,var(--surface2) 70%,transparent)}
+.chat-item.active{background:var(--surface2)}
+.chat-item .meta{min-width:0;flex:1}
+.chat-item .t{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.chat-item .s{color:var(--muted);font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sb-label{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);padding:4px 2px 0}
+.sb-nav{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;padding:10px 14px 14px;border-top:1px solid var(--border)}
+.sb-nav button{background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:9px 4px;font-size:13px;display:flex;flex-direction:column;align-items:center;gap:3px}
+.sb-nav svg{width:18px;height:18px}
+#scrim{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:35;opacity:0;pointer-events:none;transition:opacity .2s}
+#scrim.show{opacity:1;pointer-events:auto}
+@media (min-width:900px){#scrim{display:none}}
+
+/* ---------- main ---------- */
+#main{display:flex;flex-direction:column;min-height:0;min-width:0;position:relative;
+  background:linear-gradient(rgba(0,0,0,0),rgba(0,0,0,0)),var(--bg)}
+#main::before{content:"";position:absolute;inset:0;background-image:var(--bgImage);background-size:cover;background-position:center;opacity:calc(1 - var(--dim));pointer-events:none}
+#main>*{position:relative}
+#topbar{display:flex;align-items:center;gap:8px;padding:8px max(10px,env(safe-area-inset-right,0px)) 8px max(10px,env(safe-area-inset-left,0px));
+  background:color-mix(in srgb,var(--surface) 88%,transparent);background-image:var(--headerImage);background-size:cover;background-position:center;
+  border-bottom:1px solid var(--border);backdrop-filter:blur(8px);min-height:58px}
+@media (min-width:900px){#topbar{padding-left:16px}}
+.iconbtn{width:40px;height:40px;border-radius:10px;border:0;background:transparent;display:grid;place-items:center;flex:none}
+.iconbtn:hover{background:var(--surface2)}
+.iconbtn svg{width:22px;height:22px}
+@media (min-width:900px){#menuBtn{display:none}}
+.titlebox{flex:1;min-width:0;display:flex;align-items:center;gap:10px;border:0;background:transparent;text-align:left;padding:4px;border-radius:10px}
+.titlebox .tt{font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.titlebox .st{font-size:12.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.titlebox>div{min-width:0}
+.swap{display:flex;align-items:center;gap:6px;border:1px solid var(--border);background:var(--bg);border-radius:999px;padding:3px 10px 3px 3px;flex:none;max-width:44%}
+.swap span{font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.swap svg{width:14px;height:14px;flex:none;color:var(--muted)}
+
+.av{width:38px;height:38px;border-radius:50%;flex:none;object-fit:cover;background:var(--surface2);display:grid;place-items:center;font-weight:700;color:var(--accentText);font-size:15px;overflow:hidden}
+.av.sm{width:30px;height:30px;font-size:13px}
+.av.lg{width:84px;height:84px;font-size:30px}
+.av img{width:100%;height:100%;object-fit:cover}
+
+#messages{flex:1;overflow-y:auto;padding:18px max(12px,env(safe-area-inset-right,0px)) 10px max(12px,env(safe-area-inset-left,0px));display:flex;flex-direction:column;gap:14px;overscroll-behavior:contain}
+.inner{max-width:820px;width:100%;margin:0 auto;display:flex;flex-direction:column;gap:16px}
+.msg{display:flex;gap:10px;align-items:flex-start}
+.msg.user{flex-direction:row-reverse}
+.msg .col{min-width:0;max-width:min(680px,88%);display:flex;flex-direction:column;gap:4px}
+.msg.user .col{align-items:flex-end}
+.msg .name{font-size:12.5px;color:var(--muted);font-weight:600;padding:0 4px}
+.bubble{font-family:var(--font-chat);font-size:var(--fs);line-height:1.6;color:var(--text);padding:11px 15px;border-radius:var(--radius);
+  background:color-mix(in srgb,var(--charBubble) calc(var(--bubbleAlpha)*100%),transparent);border:1px solid color-mix(in srgb,var(--border) 60%,transparent);overflow-wrap:anywhere}
+.msg.user .bubble{background:color-mix(in srgb,var(--userBubble) calc(var(--bubbleAlpha)*100%),transparent)}
+.flat .bubble{background:transparent;border-color:transparent;padding:4px 2px}
+.flat .msg.user{flex-direction:row}.flat .msg.user .col{align-items:flex-start}
+.bubble p{margin:0 0 .7em}.bubble p:last-child{margin:0}
+.bubble .it{color:var(--italics);font-style:italic}
+.bubble .q{color:var(--quote)}
+.bubble b{color:var(--bold)}
+.bubble .it .q{color:var(--quote)}
+.bubble.streaming::after{content:"▍";color:var(--accent);animation:blink 1s steps(2) infinite;margin-left:2px}
+@keyframes blink{50%{opacity:0}}
+.thinking{display:inline-flex;gap:4px}.thinking i{width:6px;height:6px;border-radius:50%;background:var(--muted);animation:bob 1.2s infinite}
+.thinking i:nth-child(2){animation-delay:.15s}.thinking i:nth-child(3){animation-delay:.3s}
+@keyframes bob{0%,60%,100%{opacity:.3}30%{opacity:1}}
+@media (prefers-reduced-motion:reduce){.bubble.streaming::after,.thinking i{animation:none}#sidebar{transition:none}}
+.actions{display:none;gap:2px;flex-wrap:wrap}
+.msg.show-actions .actions{display:flex}
+@media (hover:hover){.msg:hover .actions{display:flex}}
+.actions button{border:0;background:var(--surface);border:1px solid var(--border);border-radius:8px;font-size:12.5px;padding:4px 9px;color:var(--muted);display:flex;align-items:center;gap:4px}
+.actions button:hover{color:var(--text)}
+.actions svg{width:13px;height:13px}
+.edit-area{width:min(680px,80vw);min-height:120px;font-family:var(--font-chat);font-size:var(--fs);line-height:1.55;background:var(--bg);border:1px solid var(--accent);border-radius:12px;padding:10px 12px;resize:vertical}
+.edit-row{display:flex;gap:6px;justify-content:flex-end}
+
+.empty{margin:auto;text-align:center;max-width:380px;color:var(--muted);display:flex;flex-direction:column;gap:12px;align-items:center;padding:30px 16px}
+.empty h2{color:var(--text);font-family:var(--font-chat);font-weight:600;margin:0;font-size:24px}
+
+#composer{padding:8px max(10px,env(safe-area-inset-right,0px)) calc(10px + env(safe-area-inset-bottom,0px)) max(10px,env(safe-area-inset-left,0px));
+  background:color-mix(in srgb,var(--surface) 90%,transparent);border-top:1px solid var(--border);backdrop-filter:blur(8px)}
+.comp{max-width:820px;margin:0 auto;display:flex;gap:8px;align-items:flex-end}
+#input{flex:1;resize:none;max-height:40vh;min-height:44px;padding:11px 14px;border-radius:14px;border:1px solid var(--border);background:var(--bg);font-family:var(--font-chat);font-size:var(--fs);line-height:1.4}
+#sendBtn{width:46px;height:46px;border-radius:14px;border:0;background:var(--accent);background-image:var(--sendImage);background-size:cover;background-position:center;color:var(--accentText);display:grid;place-items:center;flex:none}
+#sendBtn svg{width:22px;height:22px}
+#sendBtn.has-img svg{opacity:0}
+.comp-hint{max-width:820px;margin:0 auto 6px;font-size:12px;color:var(--muted);display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.comp-hint button{border:0;background:transparent;color:var(--accent);padding:0;font-size:12px;font-weight:600}
+
+/* ---------- buttons, fields ---------- */
+.btn{border:1px solid var(--border);background:var(--surface2);border-radius:10px;padding:9px 14px;font-weight:600;display:inline-flex;align-items:center;gap:6px;justify-content:center}
+.btn.primary{background:var(--accent);background-image:var(--buttonImage);background-size:cover;background-position:center;color:var(--accentText);border-color:transparent}
+.btn.danger{color:#ff8f8f;border-color:color-mix(in srgb,#ff8f8f 40%,var(--border))}
+.btn.sm{padding:6px 10px;font-size:13px}
+.btn:disabled{opacity:.5;cursor:default}
+.field{display:flex;flex-direction:column;gap:5px}
+.field label,.lbl{font-size:12.5px;font-weight:700;color:var(--muted);letter-spacing:.02em}
+.field .help{font-size:12.5px;color:var(--muted);line-height:1.45}
+.field input[type=text],.field input[type=password],.field input[type=number],.field select,.field textarea{
+  width:100%;padding:10px 12px;border-radius:10px;border:1px solid var(--border);background:var(--bg)}
+.field textarea{min-height:90px;resize:vertical;line-height:1.5}
+.field textarea.tall{min-height:220px;font-family:ui-monospace,"JetBrains Mono",monospace;font-size:13px}
+.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.grow{flex:1;min-width:0}
+
+/* ---------- sheet ---------- */
+#sheet{position:fixed;inset:0;z-index:60;display:flex;align-items:flex-end;justify-content:center;background:rgba(0,0,0,.5)}
+@media (min-width:700px){#sheet{align-items:center}}
+.sheet-panel{background:var(--surface);width:100%;max-width:640px;max-height:92%;border-radius:18px 18px 0 0;display:flex;flex-direction:column;border:1px solid var(--border);
+  padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (min-width:700px){.sheet-panel{border-radius:18px;max-height:88%}}
+.sheet-head{flex:none;display:flex;align-items:center;gap:6px;padding:10px 10px 10px 16px;border-bottom:1px solid var(--border)}
+.sheet-head h3{margin:0;font-size:17px;flex:1;font-family:var(--font-chat);font-weight:600}
+.sheet-body{overflow-y:auto;padding:16px max(16px,env(safe-area-inset-right,0px)) 20px max(16px,env(safe-area-inset-left,0px));display:flex;flex-direction:column;gap:14px}
+.tabs{flex:none;display:flex;gap:4px;overflow-x:auto;padding:8px 12px 0;border-bottom:1px solid var(--border)}
+.tabs button{border:0;background:transparent;padding:9px 12px;border-bottom:2px solid transparent;color:var(--muted);font-weight:600;white-space:nowrap}
+.tabs button.on{color:var(--text);border-bottom-color:var(--accent)}
+.list{display:flex;flex-direction:column;gap:6px}
+.li{display:flex;align-items:center;gap:12px;padding:10px;border:1px solid var(--border);border-radius:12px;background:var(--bg);text-align:left;width:100%}
+.li .meta{flex:1;min-width:0}
+.li .t{font-weight:700}
+.li .s{font-size:13px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+.li.on{border-color:var(--accent)}
+.pill{font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px;background:var(--surface2);color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
+.pill.acc{background:var(--accent);color:var(--accentText)}
+.colors{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px}
+.color{display:flex;align-items:center;gap:8px;padding:6px 8px;border:1px solid var(--border);border-radius:10px;background:var(--bg);font-size:13px}
+.color input{width:32px;height:28px;border:0;padding:0;background:transparent;flex:none}
+.imgslot{display:flex;align-items:center;gap:10px;padding:8px;border:1px solid var(--border);border-radius:10px;background:var(--bg)}
+.imgslot .thumb{width:54px;height:40px;border-radius:6px;background:var(--surface2) center/cover;flex:none}
+.chips{display:flex;gap:6px;flex-wrap:wrap}
+.chip{border:1px solid var(--border);background:var(--bg);border-radius:999px;padding:6px 11px;font-size:13px;display:inline-flex;align-items:center;gap:6px}
+.chip.on{border-color:var(--accent);color:var(--accent)}
+.preview-box{background:var(--bg);border:1px solid var(--border);border-radius:12px;padding:12px;white-space:pre-wrap;font-family:ui-monospace,monospace;font-size:12px;line-height:1.5;max-height:50vh;overflow:auto}
+.note{font-size:13px;color:var(--muted);line-height:1.5;padding:10px 12px;border-radius:10px;background:var(--bg);border:1px dashed var(--border)}
+.section-title{font-size:13px;font-weight:800;text-transform:uppercase;letter-spacing:.07em;color:var(--accent);margin-top:6px}
+input[type=range]{width:100%;accent-color:var(--accent)}
+.toggle{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 12px;border:1px solid var(--border);border-radius:10px;background:var(--bg)}
+.toggle input{width:20px;height:20px;accent-color:var(--accent)}
+
+#toast{position:fixed;left:50%;bottom:calc(90px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--text);color:var(--bg);padding:10px 16px;border-radius:12px;font-weight:600;font-size:14px;z-index:90;max-width:min(92vw,520px);text-align:center;box-shadow:0 8px 30px rgba(0,0,0,.35)}
+#confirmBox{position:fixed;inset:0;z-index:80;background:rgba(0,0,0,.55);display:grid;place-items:center;padding:16px}
+#confirmBox .box{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:20px;max-width:380px;width:100%;display:flex;flex-direction:column;gap:14px}
+#confirmBox p{margin:0;line-height:1.5}
+</style>
+
+<div id="app">
+  <aside id="sidebar" aria-label="Chats">
+    <div class="sb-inner">
+      <div class="row" style="justify-content:space-between">
+        <div class="brand"><span class="mark">✶</span>Storyloom</div>
+      </div>
+      <button id="newChatBtn" class="btn primary" type="button">＋ New chat</button>
+      <input id="chatSearch" type="search" placeholder="Search chats" aria-label="Search chats">
+      <div class="sb-label">Chats</div>
+      <div id="chatList"></div>
+    </div>
+    <nav class="sb-nav">
+      <button type="button" data-open="characters"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.8-3.6 3.4-5.5 6.5-5.5s5.7 1.9 6.5 5.5"/><circle cx="17" cy="7" r="2.5"/><path d="M17 12.5c2.3 0 4 1.4 4.6 4"/></svg>Characters</button>
+      <button type="button" data-open="personas"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M5 4h14v6a7 7 0 0 1-14 0z"/><path d="M8.5 9.5h2M13.5 9.5h2M9.5 13c1.5 1 3.5 1 5 0"/></svg>Personas</button>
+      <button type="button" data-open="settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>Settings</button>
+    </nav>
+  </aside>
+  <div id="scrim"></div>
+  <main id="main">
+    <header id="topbar">
+      <button id="menuBtn" class="iconbtn" type="button" aria-label="Open chats"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
+      <button id="titleBox" class="titlebox" type="button" aria-label="Chat settings"><div><div class="tt" id="chatTitle">Storyloom</div><div class="st" id="chatSub"></div></div></button>
+      <button id="swapBtn" class="swap" type="button" aria-label="Swap character" hidden></button>
+      <button id="chatSettingsBtn" class="iconbtn" type="button" aria-label="Chat settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="5" r="1.4"/><circle cx="12" cy="12" r="1.4"/><circle cx="12" cy="19" r="1.4"/></svg></button>
+    </header>
+    <div id="messages"><div class="inner" id="msgInner"></div></div>
+    <div id="composer">
+      <div class="comp-hint" id="compHint"></div>
+      <div class="comp">
+        <textarea id="input" rows="1" placeholder="Write your turn…  *actions*  &quot;dialogue&quot;" aria-label="Message"></textarea>
+        <button id="sendBtn" type="button" aria-label="Send"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h13M13 6l6 6-6 6"/></svg></button>
+      </div>
+    </div>
+  </main>
+</div>
+<div id="sheet" hidden><div class="sheet-panel" role="dialog" aria-modal="true"><div class="sheet-head"><button class="iconbtn" id="sheetBack" type="button" aria-label="Back" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 6l-6 6 6 6"/></svg></button><h3 id="sheetTitle"></h3><button class="iconbtn" id="sheetClose" type="button" aria-label="Close"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div><div id="sheetTabs" class="tabs" hidden></div><div class="sheet-body" id="sheetBody"></div></div></div>
+<div id="confirmBox" hidden><div class="box"><p id="confirmText"></p><div class="row" style="justify-content:flex-end"><button class="btn" id="confirmNo" type="button">Cancel</button><button class="btn danger" id="confirmYes" type="button">Delete</button></div></div></div>
+<div id="toast" hidden></div>
+
+<script>
+/* =====================================================================
+   PROMPTS — the defaults. All of these are editable in Settings › Prompts.
+   ===================================================================== */
+const DEFAULT_SYSTEM = `You are {{char}}. You are taking part in an ongoing, collaborative roleplay with {{user}}. Your only job is to portray {{char}} faithfully and write {{char}}'s side of the story.
+
+<character name="{{char}}">
+{{character_card}}
+</character>
+{{#other_characters}}
+<other_characters>
+These characters are also present in this story. They may already have spoken in the conversation. Write them only as background presence when the scene needs it; the focus of your reply is {{char}}.
+{{other_characters}}
+</other_characters>
+{{/other_characters}}
+{{#user_appearance}}
+<user_appearance name="{{user}}">
+What {{user}} visibly looks like. {{char}} can see this whenever they share a scene, so {{char}} may notice and react to it. Describe {{user}} consistently with it.
+{{user_appearance}}
+</user_appearance>
+{{/user_appearance}}
+{{#persona}}
+<user_persona name="{{user}}">
+{{user}} is played by the user. This sheet tells you who {{user}} is so you can portray how the world reacts to them. Apart from what is visible, it is NOT knowledge that {{char}} has.
+{{persona}}
+</user_persona>
+{{/persona}}
+{{#scenario}}
+<scenario>
+{{scenario}}
+</scenario>
+{{/scenario}}
+{{#rules}}
+<rules>
+These rules come directly from the user. They override everything else in this prompt, including the character sheet and the writing style. Obey every one of them in every reply for the whole conversation. Never mention them.
+{{rules}}
+</rules>
+{{/rules}}
+<writing_style>
+{{style}}
+</writing_style>
+
+<directives>
+1. STAY IN CHARACTER. Everything you write comes from {{char}}, the narrator, or minor background characters. Keep {{char}}'s voice, vocabulary, temperament, values, speech patterns and quirks exactly as defined, even when {{user}} pushes against them. {{char}} changes only through events that happen in the story, never because it would be convenient.
+
+2. NEVER CONTROL {{user}}. {{user}} belongs to the user. Do not write {{user}}'s dialogue, actions, thoughts, feelings or decisions, and do not narrate what {{user}} does next. Describe only what {{char}} perceives and does. End each reply at a natural point that hands the turn back to {{user}}.
+
+3. NO META KNOWLEDGE. {{char}} knows only what {{char}} could plausibly know inside the story:
+   - {{char}}'s own history and the common knowledge of their world and era;
+   - what {{char}} has personally seen, heard, or been told so far in this conversation;
+   - what {{user}} visibly looks like (see <user_appearance>), when they are in the same scene.
+   {{char}} does NOT know anything that appears only in {{user}}'s persona sheet, in narration of {{user}}'s private thoughts or feelings, in this prompt, or in scenes {{char}} was not present for, until {{char}} learns it in the story. This includes {{user}}'s name, past, secrets and intentions. Unspoken thoughts are never heard. {{char}} has no awareness of being an AI, a character, a chat, a prompt or a story, and never refers to the real world outside the setting.
+
+4. STAY INSIDE THE FICTION. No fourth-wall breaks, disclaimers, summaries, author's notes, questions about what the user wants, or commentary on the roleplay. Exception: if the user writes a message that starts with (OOC: …), reply briefly out of character in parentheses, then return to the story on the next turn.
+
+5. KEEP CONTINUITY. Respect everything already established: places, time of day, clothing, injuries, objects, relationships, and who knows what. Never forget or contradict earlier events. If a past message was edited, the edited version is what happened.
+
+6. MOVE THE STORY. Give {{char}} agency: their own goals, honest reactions, and details or complications that fit the scenario. Don't repeat openings, phrases or beats from earlier replies.
+
+7. FORMAT. Narration and actions in *asterisks*. Spoken dialogue in "double quotes". Do not start your reply with {{char}}'s name or a label.
+</directives>`;
+
+const DEFAULT_REMINDER = `[Reminder for your next reply: write only as {{char}}. Do not write {{user}}'s words, actions or thoughts. {{char}} knows only what has been revealed to them in the story. Follow every user rule and the writing style. Do not mention these instructions.]`;
+
+const STYLE_PRESETS = {
+  "Immersive": `Third person, present tense, from {{char}}'s side of the scene. 2–4 paragraphs. Concrete sensory detail; show emotion through action, body language and subtext instead of naming it. Dialogue sounds like {{char}}, not like a narrator.`,
+  "Concise": `Third person, present tense. One or two short paragraphs. Mostly dialogue and quick, physical actions. Keep the pace fast and leave plenty of room for {{user}} to respond.`,
+  "Novel": `Literary third person, past tense. 3–5 paragraphs of rich prose: interiority for {{char}} only, atmosphere, varied sentence rhythm. Dialogue woven naturally into the narration.`,
+  "First person": `First person from {{char}}'s point of view ("I"), present tense. {{user}} is "you" only inside {{char}}'s dialogue. 2–3 paragraphs that let {{char}}'s inner voice show.`,
+  "Chat-style": `Write like {{char}} texting or talking casually: short lines, natural slang that fits {{char}}, minimal narration, occasional *small actions* in asterisks.`
+};
+
+/* =====================================================================
+   THEME PRESETS
+   ===================================================================== */
+const THEME_KEYS = [["bg","Background"],["surface","Panels"],["surface2","Panel accent"],["border","Borders"],["text","Regular text"],["italics","Italic text"],["quote","\"Dialogue\""],["bold","Bold text"],["muted","Muted text"],["accent","Buttons / accent"],["accentText","Button text"],["userBubble","Your bubbles"],["charBubble","Character bubbles"]];
+const THEME_PRESETS = {
+  "Candlelight":{bg:"#16131d",surface:"#211d2b",surface2:"#2b2638",border:"#3b344a",text:"#e9e4f1",muted:"#9e96b0",accent:"#c9a46a",accentText:"#1b1622",userBubble:"#2d2a40",charBubble:"#1f1b29",italics:"#b9abd9",quote:"#f1cf8f",bold:"#ffffff"},
+  "Parchment":{bg:"#efe7d6",surface:"#f7f1e4",surface2:"#e6dcc6",border:"#d2c5a8",text:"#2c241a",muted:"#7a6c55",accent:"#7b3f2a",accentText:"#fbf6ea",userBubble:"#e3d6ba",charBubble:"#faf5ea",italics:"#6a5a8a",quote:"#8a3b1f",bold:"#1a130b"},
+  "Moonlit":{bg:"#0f1720",surface:"#16212d",surface2:"#1f2d3c",border:"#2c3e51",text:"#dde8f2",muted:"#8aa0b5",accent:"#7fc4d8",accentText:"#0d1a22",userBubble:"#1d3044",charBubble:"#142030",italics:"#9fb6e8",quote:"#ffd59a",bold:"#ffffff"},
+  "Rosewood":{bg:"#1c1214",surface:"#28191d",surface2:"#352226",border:"#4a3036",text:"#f3e4e6",muted:"#b0949a",accent:"#e08a9b",accentText:"#2a0f15",userBubble:"#3a242a",charBubble:"#25171b",italics:"#d6a8c8",quote:"#f6c48d",bold:"#ffffff"},
+  "Terminal":{bg:"#0c0f0c",surface:"#121812",surface2:"#1a221a",border:"#2a382a",text:"#cfe8cf",muted:"#7c947c",accent:"#8fd18f",accentText:"#0c140c",userBubble:"#172117",charBubble:"#101510",italics:"#a6c4e8",quote:"#e8d68f",bold:"#ffffff"}
+};
+const FONTS = ["System","Manrope","Inter","Atkinson Hyperlegible","Nunito","Quicksand","Comfortaa","Fira Sans","Literata","Lora","Merriweather","Crimson Pro","EB Garamond","Cormorant Garamond","Source Serif 4","Playfair Display","Spectral","Special Elite","Caveat","Kalam","JetBrains Mono","IBM Plex Mono"];
+const IMG_SLOTS = [["bgImage","Chat background",1600,"jpeg"],["sidebarImage","Sidebar background",900,"jpeg"],["headerImage","Header bar",1400,"jpeg"],["buttonImage","Buttons",600,"png"],["sendImage","Send button",256,"png"]];
+
+/* =====================================================================
+   UTILITIES
+   ===================================================================== */
+const $ = s => document.querySelector(s);
+const uid = () => Math.random().toString(36).slice(2,9) + Date.now().toString(36).slice(-5);
+const esc = s => String(s ?? "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+const escA = s => esc(s).replace(/"/g,"&quot;");
+const clone = o => JSON.parse(JSON.stringify(o));
+const IS_NATIVE = !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
+const HAS_CLAUDE = !!(window.claude && typeof window.claude.use === "function");
+const ICON = {
+  edit:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 20h4L19 9l-4-4L4 16z"/></svg>',
+  del:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg>',
+  regen:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7"/></svg>',
+  copy:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a1 1 0 0 1 1-1h9"/></svg>',
+  cont:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M13 6l6 6-6 6"/></svg>',
+  stop:'<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>',
+  send:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h13M13 6l6 6-6 6"/></svg>',
+  chev:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M7 10l5 5 5-5"/></svg>'
+};
+function hexToRgb(h){h=h.replace('#','');if(h.length===3)h=h.split('').map(c=>c+c).join('');const n=parseInt(h,16);return[(n>>16)&255,(n>>8)&255,n&255]}
+function lum(h){const[r,g,b]=hexToRgb(h);return(0.299*r+0.587*g+0.114*b)/255}
+function avatarColor(name){let h=0;for(const c of String(name||"?"))h=(h*31+c.charCodeAt(0))%360;return`hsl(${h} 45% 68%)`}
+function avHTML(obj,cls=""){const name=obj?.name||"?";if(obj?.avatar)return`<span class="av ${cls}"><img src="${escA(obj.avatar)}" alt=""></span>`;return`<span class="av ${cls}" style="background:${avatarColor(name)}">${esc(name.trim()[0]||"?").toUpperCase()}</span>`}
+
+let toastTimer;
+function toast(msg,ms=2600){const t=$("#toast");t.textContent=msg;t.hidden=false;clearTimeout(toastTimer);toastTimer=setTimeout(()=>t.hidden=true,ms)}
+function confirmDlg(text,yes="Delete"){return new Promise(res=>{$("#confirmText").textContent=text;$("#confirmYes").textContent=yes;$("#confirmBox").hidden=false;
+  const done=v=>{$("#confirmBox").hidden=true;$("#confirmYes").onclick=$("#confirmNo").onclick=null;res(v)};
+  $("#confirmYes").onclick=()=>done(true);$("#confirmNo").onclick=()=>done(false);})}
+
+/* Resize an uploaded image so storage stays small */
+function pickImage(maxDim,type="jpeg"){return new Promise(res=>{const inp=document.createElement("input");inp.type="file";inp.accept="image/*";
+  inp.onchange=()=>{const f=inp.files[0];if(!f)return res(null);
+    if(f.type==="image/gif"&&f.size<1.5e6){const r=new FileReader();r.onload=()=>res(r.result);r.readAsDataURL(f);return}
+    const r=new FileReader();r.onload=()=>{const img=new Image();img.onload=()=>{let{width:w,height:h}=img;const s=Math.min(1,maxDim/Math.max(w,h));w=Math.round(w*s);h=Math.round(h*s);
+      const c=document.createElement("canvas");c.width=w;c.height=h;c.getContext("2d").drawImage(img,0,0,w,h);
+      res(c.toDataURL(type==="png"?"image/png":"image/jpeg",0.86))};img.onerror=()=>res(null);img.src=r.result};r.readAsDataURL(f)};
+  inp.click()})}
+
+/* =====================================================================
+   STORAGE (IndexedDB, falls back to memory)
+   ===================================================================== */
+const Store = {
+  db:null, ok:false,
+  open(){return new Promise(res=>{try{const r=indexedDB.open("storyloom",1);r.onupgradeneeded=()=>r.result.createObjectStore("kv");
+    r.onsuccess=()=>{this.db=r.result;this.ok=true;res(true)};r.onerror=()=>res(false);r.onblocked=()=>res(false)}catch(e){res(false)}})},
+  get(k){return new Promise(res=>{if(!this.db)return res(null);try{const q=this.db.transaction("kv").objectStore("kv").get(k);q.onsuccess=()=>res(q.result??null);q.onerror=()=>res(null)}catch(e){res(null)}})},
+  set(k,v){return new Promise(res=>{if(!this.db)return res(false);try{const tx=this.db.transaction("kv","readwrite");tx.objectStore("kv").put(v,k);tx.oncomplete=()=>res(true);tx.onerror=()=>res(false)}catch(e){res(false)}})}
+};
+let saveTimer;
+function save(){clearTimeout(saveTimer);saveTimer=setTimeout(()=>Store.set("state",JSON.stringify(S)),350)}
+
+/* =====================================================================
+   STATE
+   ===================================================================== */
+function defaultState(){
+  const charId=uid(), personaId=uid(), chatId=uid();
+  const char={id:charId,name:"Captain Mirela Voss",avatar:"",example:true,
+    description:"Mid-forties captain of the airship *Kestrel's Due*, a patched-together cargo runner working the storm lanes above the Shattered Coast. Tall, weathered, a burn scar along her left jaw from a boiler fire she doesn't talk about. Wears a long oilskin coat with brass buttons she polishes when she's thinking.",
+    personality:"Dry, sardonic, fiercely loyal to her crew, allergic to sentiment. Trusts slowly and tests people with small jobs. Speaks in short, clipped sentences; swears creatively in old sailor slang ('rust and ruin'). Keeps her word even when it costs her. Hates the Tidewater Guild, which owns the debt on her ship.",
+    scenario:"Night at the Port Halcyon skydocks. A storm is rolling in. Mirela is short a navigator and two days from losing the *Kestrel's Due* to the Guild's debt collectors.",
+    firstMessage:"*Rain hammers the tarp over the loading ramp. Mirela doesn't look up from the cargo manifest she's scowling at, lantern hissing beside her.* \"If you're from the Guild, the answer's still no. If you're looking for work...\" *She finally lifts her eyes, sizing you up from boots to collar.* \"...then you've got about as long as it takes this lantern to sputter out to convince me you can read a storm chart.\"",
+    examples:"<START>\n{{user}}: \"Is the ship safe?\"\n{{char}}: *Mirela snorts and slaps a riveted strut.* \"Safe? She's held together by spite and good paint. She'll get you there. Comfort costs extra.\""};
+  const persona={id:personaId,name:"Wren",avatar:"",example:true,appearance:"Late twenties, slight build, ink-stained fingers, short windblown dark hair, a battered brass sextant on a cord around the neck.",description:"A former Guild cartographer who walked out after discovering the Guild was falsifying storm charts to wreck competitors. Soft-spoken, observant, carries a battered brass sextant. Is secretly being hunted by Guild enforcers."};
+  const chat={id:chatId,title:"Storm over Port Halcyon",characterIds:[charId],activeCharId:charId,personaId,scenario:char.scenario,rules:"",style:"",updated:Date.now(),
+    messages:[{id:uid(),role:"char",charId,content:char.firstMessage,ts:Date.now()}]};
+  return{
+    v:1,
+    settings:{provider:HAS_CLAUDE?"builtin":"openrouter",baseUrl:"https://openrouter.ai/api/v1",apiKey:"",model:"anthropic/claude-sonnet-4.5",temperature:0.9,maxTokens:700,contextLimit:80,stream:true,nativeHttp:false,enterSends:!matchMedia("(pointer:coarse)").matches},
+    prompts:{system:DEFAULT_SYSTEM,reminder:DEFAULT_REMINDER,style:STYLE_PRESETS["Immersive"],rules:"- Never write dialogue, actions or thoughts for {{user}}.\n- Keep replies under 350 words."},
+    theme:{...THEME_PRESETS["Candlelight"],fontUI:"Manrope",fontChat:"Literata",fontSize:16,bubbles:true,bubbleAlpha:0.92,dim:0.55,bgImage:"",sidebarImage:"",headerImage:"",buttonImage:"",sendImage:""},
+    characters:[char],personas:[persona],defaultPersonaId:personaId,chats:[chat],activeChatId:chatId
+  };
+}
+let S;
+const getChat=id=>S.chats.find(c=>c.id===(id??S.activeChatId));
+const getChar=id=>S.characters.find(c=>c.id===id);
+const getPersona=id=>S.personas.find(p=>p.id===id);
+function migrate(s){const d=defaultState();
+  s.settings={...d.settings,...s.settings};s.prompts={...d.prompts,...s.prompts};s.theme={...d.theme,...s.theme};
+  s.characters??=[];s.personas??=[];s.chats??=[];
+  if(!s.prompts.system.includes("{{user_appearance}}")){
+    const blk=DEFAULT_SYSTEM.match(/\{\{#user_appearance\}\}[\s\S]*?\{\{\/user_appearance\}\}\n/)[0];
+    s.prompts.system=s.prompts.system.includes("{{#persona}}")?s.prompts.system.replace("{{#persona}}",blk+"{{#persona}}"):s.prompts.system+"\n\n"+blk;
+  }
+  if(s.settings.provider==="builtin"&&!HAS_CLAUDE)s.settings.provider="openrouter";
+  return s}
+
+/* =====================================================================
+   THEME
+   ===================================================================== */
+const loadedFonts=new Set();
+function loadFont(name){if(!name||name==="System"||loadedFonts.has(name))return;loadedFonts.add(name);
+  const fam=encodeURIComponent(name).replace(/%20/g,"+");
+  const l=document.createElement("link");l.rel="stylesheet";l.href=`https://fonts.googleapis.com/css2?family=${fam}:ital,wght@0,400;0,600;0,700;1,400&display=swap`;
+  l.onerror=()=>{const l2=document.createElement("link");l2.rel="stylesheet";l2.href=`https://fonts.googleapis.com/css2?family=${fam}&display=swap`;document.head.appendChild(l2)};
+  document.head.appendChild(l)}
+function fontStack(n,serif){if(!n||n==="System")return serif?"Georgia,'Times New Roman',serif":"system-ui,-apple-system,'Segoe UI',Roboto,sans-serif";return`"${n}",${serif?"Georgia,serif":"system-ui,sans-serif"}`}
+function applyTheme(){const t=S.theme,r=document.documentElement.style;
+  for(const[k]of THEME_KEYS)r.setProperty("--"+k,t[k]);
+  loadFont(t.fontUI);loadFont(t.fontChat);
+  r.setProperty("--font-ui",fontStack(t.fontUI,false));r.setProperty("--font-chat",fontStack(t.fontChat,true));
+  r.setProperty("--fs",t.fontSize+"px");r.setProperty("--bubbleAlpha",t.bubbleAlpha);r.setProperty("--dim",t.bgImage?t.dim:1);
+  for(const[k]of IMG_SLOTS)r.setProperty("--"+k,t[k]?`url("${t[k]}")`:"none");
+  r.setProperty("color-scheme",lum(t.bg)>0.55?"light":"dark");
+  document.body.classList.toggle("flat",!t.bubbles);
+  $("#sendBtn").classList.toggle("has-img",!!t.sendImage)}
+
+/* =====================================================================
+   MESSAGE FORMATTING: *italics*, "dialogue", **bold**
+   ===================================================================== */
+function fmt(src){
+  let h=esc(src);
+  h=h.replace(/\*\*([^*\n]+?)\*\*/g,"<b>$1</b>");
+  h=h.replace(/\*([^*\n]+?)\*/g,"<i class='it'>$1</i>");
+  h=h.replace(/"([^"\n]+?)"/g,"<span class='q'>\"$1\"</span>");
+  h=h.replace(/“([^”\n]+?)”/g,"<span class='q'>“$1”</span>");
+  return h.split(/\n{2,}/).map(p=>"<p>"+p.replace(/\n/g,"<br>")+"</p>").join("");
+}
+
+/* =====================================================================
+   RENDER: sidebar
+   ===================================================================== */
+function chatAvatarObj(chat){const c=getChar(chat.activeCharId)||getChar(chat.characterIds[0]);return c||{name:chat.title}}
+function snippet(chat){const m=chat.messages[chat.messages.length-1];if(!m)return"No messages yet";const who=m.role==="user"?(getPersona(chat.personaId)?.name||"You"):(getChar(m.charId)?.name||"");
+  return(who?who+": ":"")+m.content.replace(/[*"“”]/g,"").replace(/\s+/g," ").slice(0,90)}
+function renderSidebar(){
+  const q=$("#chatSearch").value.trim().toLowerCase();
+  const chats=[...S.chats].sort((a,b)=>b.updated-a.updated).filter(c=>!q||c.title.toLowerCase().includes(q)||c.characterIds.some(id=>getChar(id)?.name.toLowerCase().includes(q)));
+  $("#chatList").innerHTML=chats.length?chats.map(c=>`<button type="button" class="chat-item ${c.id===S.activeChatId?"active":""}" data-chat="${c.id}">${avHTML(chatAvatarObj(c))}<div class="meta"><div class="t">${esc(c.title)}</div><div class="s">${esc(snippet(c))}</div></div></button>`).join("")
+    :`<div class="note">${q?"No chats match.":"No chats yet. Start one with ＋ New chat."}</div>`;
+}
+
+/* =====================================================================
+   RENDER: chat
+   ===================================================================== */
+let gen=null; // {chatId,msgId,ctrl}
+function renderHeader(){
+  const chat=getChat();
+  if(!chat){$("#chatTitle").textContent="Storyloom";$("#chatSub").textContent="";$("#swapBtn").hidden=true;$("#chatSettingsBtn").hidden=true;return}
+  $("#chatSettingsBtn").hidden=false;
+  $("#chatTitle").textContent=chat.title;
+  const p=getPersona(chat.personaId);
+  $("#chatSub").textContent=(p?`You are ${p.name}`:"No persona")+(chat.scenario?" · "+chat.scenario.replace(/\s+/g," "):"");
+  const c=getChar(chat.activeCharId);
+  $("#swapBtn").hidden=false;
+  $("#swapBtn").innerHTML=c?`${avHTML(c,"sm")}<span>${esc(c.name)}</span>${ICON.chev}`:`<span>Pick character</span>${ICON.chev}`;
+}
+function msgHTML(m,chat,isLastChar){
+  const isUser=m.role==="user";
+  const who=isUser?(getPersona(chat.personaId)||{name:"You"}):(getChar(m.charId)||{name:"(removed character)"});
+  const streaming=gen&&gen.msgId===m.id;
+  const body=streaming&&!m.content?`<span class="thinking"><i></i><i></i><i></i></span>`:fmt(m.content);
+  return`<div class="msg ${isUser?"user":"char"}" data-msg="${m.id}">${avHTML(who)}<div class="col"><div class="name">${esc(who.name)}</div>
+    <div class="bubble${streaming&&m.content?" streaming":""}">${body}</div>
+    <div class="actions">
+      <button type="button" data-act="edit">${ICON.edit}Edit</button>
+      <button type="button" data-act="del">${ICON.del}Delete</button>
+      ${!isUser&&isLastChar?`<button type="button" data-act="regen">${ICON.regen}Regenerate</button><button type="button" data-act="cont">${ICON.cont}Continue</button>`:""}
+      <button type="button" data-act="copy">${ICON.copy}Copy</button>
+    </div></div></div>`}
+function renderMessages(keepScroll){
+  const chat=getChat(),box=$("#msgInner"),sc=$("#messages");
+  const atBottom=sc.scrollHeight-sc.scrollTop-sc.clientHeight<80;
+  if(!chat){box.innerHTML=`<div class="empty"><h2>Start a story</h2><p>Pick a character and step into the scene. Your persona, the scenario and your rules shape every reply.</p><button class="btn primary" type="button" id="emptyNew">＋ New chat</button></div>`;
+    $("#emptyNew").onclick=newChatSheet;return}
+  const lastIdx=chat.messages.length-1;
+  box.innerHTML=chat.messages.length?chat.messages.map((m,i)=>msgHTML(m,chat,i===lastIdx&&m.role==="char")).join("")
+    :`<div class="empty"><p>The scene is set. Write the first move, or tap send with an empty box to let ${esc(getChar(chat.activeCharId)?.name||"the character")} begin.</p></div>`;
+  if(!keepScroll||atBottom)sc.scrollTop=sc.scrollHeight;
+}
+function renderComposer(){
+  const chat=getChat();const c=chat&&getChar(chat.activeCharId);
+  $("#composer").hidden=!chat;
+  const busy=!!gen;
+  $("#sendBtn").innerHTML=busy?ICON.stop:ICON.send;$("#sendBtn").setAttribute("aria-label",busy?"Stop":"Send");
+  if(!chat){return}
+  let prov=S.settings.provider==="builtin"?"Claude (built-in)":(S.settings.model||"no model set");
+  $("#compHint").innerHTML=busy?`<span>${esc(c?.name||"Character")} is writing…</span>`
+    :`<span>${c?`Next reply: <b>${esc(c.name)}</b>`:"No character selected"}</span><span>·</span><span>${esc(prov)}</span>`;
+}
+function renderAll(){renderSidebar();renderHeader();renderMessages();renderComposer()}
+function updateStreamingMsg(m){const el=document.querySelector(`[data-msg="${m.id}"] .bubble`);if(!el)return;
+  el.innerHTML=m.content?fmt(m.content):`<span class="thinking"><i></i><i></i><i></i></span>`;el.classList.toggle("streaming",!!m.content&&!!gen);
+  const sc=$("#messages");if(sc.scrollHeight-sc.scrollTop-sc.clientHeight<160)sc.scrollTop=sc.scrollHeight}
+
+/* =====================================================================
+   PROMPT ASSEMBLY
+   ===================================================================== */
+function renderTemplate(tpl,ctx){
+  let out=tpl.replace(/\{\{#(\w+)\}\}([\s\S]*?)\{\{\/\1\}\}/g,(_,k,inner)=>(ctx[k]&&String(ctx[k]).trim())?inner:"");
+  out=out.replace(/\{\{(\w+)\}\}/g,(m,k)=>k in ctx?ctx[k]:m);
+  return out.replace(/\n{3,}/g,"\n\n").trim();
+}
+function macro(s,charName,userName){return String(s||"").replace(/\{\{char\}\}/gi,charName).replace(/\{\{user\}\}/gi,userName)}
+function buildRequest(chat,char,history){
+  const persona=getPersona(chat.personaId)||{name:"User",description:""};
+  const U=persona.name||"User",C=char.name;
+  const card=[`Name: ${C}`,char.description&&`Description:\n${char.description}`,char.personality&&`Personality:\n${char.personality}`,
+    char.examples&&`Example dialogue (shows ${C}'s voice only; these exchanges did not happen in this story):\n${char.examples.replace(/<START>/gi,"---")}`].filter(Boolean).join("\n\n");
+  const others=chat.characterIds.filter(id=>id!==char.id).map(getChar).filter(Boolean).map(o=>`- ${o.name}: ${(o.description||"").replace(/\s+/g," ").slice(0,700)}${o.personality?" Personality: "+o.personality.replace(/\s+/g," ").slice(0,300):""}`).join("\n");
+  const rules=[S.prompts.rules,chat.rules].map(r=>(r||"").trim()).filter(Boolean).join("\n");
+  const style=(chat.style||"").trim()||S.prompts.style;
+  const ctx={char:C,user:U,character_card:card,other_characters:others,persona:persona.description||"",user_appearance:persona.appearance||"",scenario:chat.scenario||"",rules,style};
+  // render twice so {{char}}/{{user}} inside inserted fields are also resolved
+  const system=macro(renderTemplate(S.prompts.system,ctx),C,U);
+  const reminder=macro(S.prompts.reminder,C,U).trim();
+
+  const limit=Math.max(4,+S.settings.contextLimit||80);
+  const hist=history.slice(-limit);
+  const turns=[];
+  for(const m of hist){
+    let role,content;
+    if(m.role==="user"){role="user";content=m.content}
+    else if(m.charId===char.id){role="assistant";content=m.content}
+    else{role="user";content=`[${getChar(m.charId)?.name||"Another character"}]\n${m.content}`}
+    if(!content.trim())continue;
+    const last=turns[turns.length-1];
+    if(last&&last.role===role)last.content+="\n\n"+content;else turns.push({role,content});
+  }
+  if(!turns.length||turns[0].role!=="user")turns.unshift({role:"user",content:`[The scene begins. ${U} is present.]`});
+  if(turns[turns.length-1].role==="assistant")turns.push({role:"user",content:`[Continue the scene as ${C}.]`});
+  if(reminder)turns[turns.length-1].content+="\n\n"+reminder;
+  return{system,turns,charName:C,userName:U};
+}
+
+/* =====================================================================
+   PROVIDERS
+   ===================================================================== */
+const PROVIDERS={
+  builtin:{label:"Claude (built-in)",note:"Uses your Claude account through this page. Only works while the app is opened inside Claude."},
+  openrouter:{label:"OpenRouter",baseUrl:"https://openrouter.ai/api/v1",model:"anthropic/claude-sonnet-4.5",kind:"openai",note:"One key, hundreds of models. Get a key at openrouter.ai/keys."},
+  openai:{label:"OpenAI",baseUrl:"https://api.openai.com/v1",model:"gpt-4o",kind:"openai"},
+  anthropic:{label:"Anthropic",baseUrl:"https://api.anthropic.com",model:"claude-sonnet-5-5",kind:"anthropic",note:"Get a key at console.anthropic.com."},
+  nvidia:{label:"NVIDIA NIM",baseUrl:"https://integrate.api.nvidia.com/v1",model:"meta/llama-3.3-70b-instruct",kind:"openai",native:true,note:"Get a key (starts with nvapi-) at build.nvidia.com. Pick a model there and copy its name, like meta/llama-3.3-70b-instruct. NVIDIA blocks browser requests, so this only works in the Android app, using the direct connection below."},
+  custom:{label:"Custom (OpenAI-compatible)",baseUrl:"http://localhost:1234/v1",model:"",kind:"openai",note:"Any OpenAI-compatible server: LM Studio, Ollama (/v1), KoboldCpp, Together, DeepSeek, Groq, etc."}
+};
+/* Native HTTP (Android app only): skips the browser's cross-site (CORS) block. No live streaming. */
+const NativeHttp=IS_NATIVE?window.Capacitor?.Plugins?.CapacitorHttp:null;
+async function post(url,headers,bodyObj,signal,useNative){
+  if(useNative&&NativeHttp){
+    const r=await NativeHttp.request({url,method:"POST",headers,data:{...bodyObj,stream:false},responseType:"json",connectTimeout:30000,readTimeout:180000});
+    if(signal?.aborted)throw new DOMException("Aborted","AbortError");
+    const data=typeof r.data==="string"?(()=>{try{return JSON.parse(r.data)}catch(e){return{error:{message:r.data}}}})():r.data;
+    return{ok:r.status>=200&&r.status<300,status:r.status,native:true,json:async()=>data,text:async()=>JSON.stringify(data)};
+  }
+  return fetch(url,{method:"POST",signal,headers,body:JSON.stringify(bodyObj)});
+}
+async function readSSE(res,onData,signal){
+  const reader=res.body.getReader(),dec=new TextDecoder();let buf="";
+  while(true){if(signal?.aborted)break;const{done,value}=await reader.read();if(done)break;buf+=dec.decode(value,{stream:true});
+    let i;while((i=buf.indexOf("\n"))>=0){const line=buf.slice(0,i).replace(/\r$/,"");buf=buf.slice(i+1);
+      if(!line.startsWith("data:"))continue;const d=line.slice(5).trim();if(!d||d==="[DONE]")continue;try{onData(JSON.parse(d))}catch(e){}}}
+}
+async function errText(res){let t="";try{t=await res.text();if(res.native&&t.length>300)t=t.slice(0,300);const j=JSON.parse(t);t=j.error?.message||j.message||j.error||t}catch(e){}return`${res.status} ${typeof t==="string"?t.slice(0,300):""}`}
+async function callModel({system,turns},onText,signal){
+  const st=S.settings,P=PROVIDERS[st.provider]||PROVIDERS.custom;
+  if(st.provider==="builtin"){
+    const sample=await window.claude.use("sample");
+    if(!sample)throw new Error("Built-in Claude isn't available here. Choose another provider in Settings › Connection.");
+    const input=clone(turns);input[0].content=`<roleplay_instructions>\n${system}\n</roleplay_instructions>\n\n${input[0].content}`;
+    try{const r=await sample(input,{cache:false,signal,onText:({text})=>onText(text)});return r.text}
+    catch(e){if(e?.code==="not_granted")throw new Error("Claude access wasn't allowed for this page.");if(e?.code==="rate_limited")throw new Error("Too many requests. Wait a moment and try again.");if(e?.text)return e.text;throw new Error(e?.message||String(e))}
+  }
+  if(!st.apiKey&&st.provider!=="custom")throw new Error("NO_KEY");
+  if(!st.model)throw new Error("Set a model name in Settings › Connection.");
+  const base=st.baseUrl.replace(/\/+$/,"");
+  let full="";
+  const useNative=!!(st.nativeHttp&&NativeHttp);
+  if(st.nativeHttp&&!NativeHttp&&!IS_NATIVE&&st.provider==="nvidia")throw new Error("NVIDIA only works in the Android app. In the browser, use OpenRouter or another provider.");
+  if(P.kind==="anthropic"){
+    const res=await post(base+"/v1/messages",{"content-type":"application/json","x-api-key":st.apiKey,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},
+      {model:st.model,system,messages:turns,max_tokens:+st.maxTokens||700,temperature:+st.temperature,stream:!!st.stream},signal,useNative);
+    if(!res.ok)throw new Error(await errText(res));
+    if(!st.stream||res.native){const j=await res.json();full=(j.content||[]).filter(b=>b.type==="text").map(b=>b.text).join("");onText(full);return full}
+    await readSSE(res,ev=>{if(ev.type==="content_block_delta"&&ev.delta?.text){full+=ev.delta.text;onText(full)}else if(ev.type==="error")throw new Error(ev.error?.message)},signal);
+    return full;
+  }
+  const headers={"content-type":"application/json"};if(st.apiKey)headers.authorization="Bearer "+st.apiKey;
+  if(st.provider==="openrouter"){headers["HTTP-Referer"]="https://storyloom.app";headers["X-Title"]="Storyloom"}
+  const res=await post(base+"/chat/completions",headers,
+    {model:st.model,messages:[{role:"system",content:system},...turns],temperature:+st.temperature,max_tokens:+st.maxTokens||700,stream:!!st.stream},signal,useNative);
+  if(!res.ok)throw new Error(await errText(res));
+  if(!st.stream||res.native){const j=await res.json();full=j.choices?.[0]?.message?.content||"";onText(full);return full}
+  await readSSE(res,ev=>{if(ev.error)throw new Error(ev.error.message||"Stream error");const d=ev.choices?.[0]?.delta?.content;if(d){full+=d;onText(full)}},signal);
+  return full;
+}
+function cleanOutput(t,charName,userName){
+  let s=String(t||"").replace(/^\s+/,"");
+  s=s.replace(new RegExp("^\\s*\\[?"+charName.replace(/[.*+?^${}()|[\]\\]/g,"\\$&")+"\\]?\\s*:\\s*","i"),"");
+  // cut if the model starts writing the user's turn
+  const u=userName.replace(/[.*+?^${}()|[\]\\]/g,"\\$&");
+  const cut=s.search(new RegExp("\\n\\s*\\[?"+u+"\\]?\\s*:","i"));if(cut>0)s=s.slice(0,cut);
+  return s.replace(/\s+$/,"");
+}
+
+/* =====================================================================
+   GENERATION
+   ===================================================================== */
+async function generate(mode="new",targetId){
+  const chat=getChat();if(!chat||gen)return;
+  const char=getChar(chat.activeCharId);
+  if(!char){toast("Pick a character to reply first.");swapSheet();return}
+  let target,prev="",history;
+  if(mode==="regen"){
+    target=chat.messages.find(m=>m.id===targetId);prev=target.content;target.charId=char.id;target.content="";
+    history=chat.messages.slice(0,chat.messages.indexOf(target));
+  }else if(mode==="cont"){
+    target=chat.messages.find(m=>m.id===targetId);prev=target.content;history=chat.messages.slice(0,chat.messages.indexOf(target)+1);
+  }else{
+    history=[...chat.messages];target={id:uid(),role:"char",charId:char.id,content:"",ts:Date.now()};chat.messages.push(target);
+  }
+  const charForReq=mode==="cont"?(getChar(target.charId)||char):char;
+  const req=buildRequest(chat,charForReq,history);
+  if(mode==="cont"){req.turns[req.turns.length-1].content+=`\n\n[Continue ${charForReq.name}'s last message exactly where it stopped. Do not repeat what was already written.]`}
+  const ctrl=new AbortController();gen={chatId:chat.id,msgId:target.id,ctrl};
+  renderMessages();renderComposer();
+  const base=mode==="cont"?prev:"";
+  try{
+    const out=await callModel(req,txt=>{target.content=base+(mode==="cont"?" ":"")+txt;updateStreamingMsg(target)},ctrl.signal);
+    target.content=(base?base+" ":"")+cleanOutput(out,req.charName,req.userName);
+    if(!cleanOutput(out,req.charName,req.userName))throw new Error("The model returned an empty reply.");
+  }catch(e){
+    const aborted=e?.name==="AbortError"||ctrl.signal.aborted;
+    if(aborted){if(target.content.trim()){target.content=target.content.trim()}else if(mode==="new"){chat.messages=chat.messages.filter(m=>m!==target)}else target.content=prev}
+    else{
+      if(mode==="new"&&!target.content.trim())chat.messages=chat.messages.filter(m=>m!==target);else if(mode!=="new"&&!target.content.trim())target.content=prev;
+      if(e.message==="NO_KEY"){toast("Add an API key in Settings › Connection.",3500);settingsSheet("connection")}
+      else toast("Couldn't get a reply: "+e.message,5000);
+    }
+  }finally{
+    gen=null;chat.updated=Date.now();save();renderMessages(true);renderComposer();renderSidebar();
+  }
+}
+function send(){
+  if(gen){gen.ctrl.abort();return}
+  const chat=getChat();if(!chat)return newChatSheet();
+  const text=$("#input").value.trim();
+  if(text){chat.messages.push({id:uid(),role:"user",content:text,ts:Date.now()});$("#input").value="";autoGrow()}
+  chat.updated=Date.now();save();renderMessages();generate("new");
+}
+
+/* =====================================================================
+   MESSAGE ACTIONS
+   ===================================================================== */
+$("#msgInner").addEventListener("click",async e=>{
+  const msgEl=e.target.closest(".msg");if(!msgEl)return;
+  const chat=getChat(),m=chat.messages.find(x=>x.id===msgEl.dataset.msg);if(!m)return;
+  const act=e.target.closest("[data-act]")?.dataset.act;
+  if(!act){if(e.target.closest(".bubble")&&!e.target.closest("textarea")){document.querySelectorAll(".msg.show-actions").forEach(x=>x!==msgEl&&x.classList.remove("show-actions"));msgEl.classList.toggle("show-actions")}return}
+  if(gen&&act!=="copy"){toast("Wait for the reply to finish, or tap stop.");return}
+  if(act==="del"){if(await confirmDlg("Delete this message? This can't be undone.")){chat.messages=chat.messages.filter(x=>x!==m);chat.updated=Date.now();save();renderMessages(true);renderSidebar()}}
+  else if(act==="regen")generate("regen",m.id);
+  else if(act==="cont")generate("cont",m.id);
+  else if(act==="copy"){try{await navigator.clipboard.writeText(m.content);toast("Copied")}catch(err){toast("Copy isn't allowed here. Long-press the text to copy.")}}
+  else if(act==="edit"){
+    const col=msgEl.querySelector(".col");
+    col.querySelector(".bubble").outerHTML=`<textarea class="edit-area" id="edit-${m.id}">${esc(m.content)}</textarea>`;
+    col.querySelector(".actions").outerHTML=`<div class="edit-row"><button class="btn sm" type="button" data-edit="cancel">Cancel</button><button class="btn sm primary" type="button" data-edit="save">Save</button></div>`;
+    const ta=col.querySelector("textarea");ta.style.height=Math.min(innerHeight*.6,ta.scrollHeight+8)+"px";ta.focus();
+    col.querySelector('[data-edit="save"]').onclick=()=>{m.content=ta.value.trim()||m.content;m.edited=true;chat.updated=Date.now();save();renderMessages(true);renderSidebar()};
+    col.querySelector('[data-edit="cancel"]').onclick=()=>renderMessages(true);
+  }
+});
+
+/* =====================================================================
+   SHEETS
+   ===================================================================== */
+const sheetStack=[];
+function openSheet(title,render,{tabs,back}={}){
+  $("#sheet").hidden=false;
+  if(!back)sheetStack.length=0;
+  sheetStack.push({title,render,tabs});
+  drawSheet();
+  if(IS_NATIVE)history.pushState({sheet:1},"");
+}
+function drawSheet(){const top=sheetStack[sheetStack.length-1];if(!top)return closeSheet();
+  $("#sheetTitle").textContent=top.title;$("#sheetBack").hidden=sheetStack.length<2;
+  const tabsEl=$("#sheetTabs");tabsEl.hidden=!top.tabs;
+  if(top.tabs){tabsEl.innerHTML=top.tabs.list.map(([k,l])=>`<button type="button" class="${k===top.tabs.cur?"on":""}" data-tab="${k}">${l}</button>`).join("");
+    tabsEl.onclick=e=>{const k=e.target.closest("[data-tab]")?.dataset.tab;if(k){top.tabs.cur=k;drawSheet()}}}
+  const body=$("#sheetBody");body.innerHTML="";top.render(body,top.tabs?.cur);body.scrollTop=0}
+function closeSheet(){$("#sheet").hidden=true;sheetStack.length=0;renderAll()}
+function sheetBackFn(){sheetStack.pop();if(sheetStack.length)drawSheet();else closeSheet()}
+$("#sheetClose").onclick=closeSheet;$("#sheetBack").onclick=sheetBackFn;
+$("#sheet").addEventListener("click",e=>{if(e.target.id==="sheet")closeSheet()});
+
+/* ---------- New chat ---------- */
+function newChatSheet(){
+  openSheet("New chat",body=>{
+    body.innerHTML=`<p class="help" style="margin:0;color:var(--muted)">Choose who you'll be playing with.</p><div class="list">${S.characters.map(c=>`<button type="button" class="li" data-c="${c.id}">${avHTML(c)}<div class="meta"><div class="t">${esc(c.name)} ${c.example?'<span class="pill">Example</span>':""}</div><div class="s">${esc((c.description||"").replace(/[*]/g,""))}</div></div></button>`).join("")}</div>
+      <button type="button" class="btn" id="ncNew">＋ Create a character</button>`;
+    body.querySelectorAll("[data-c]").forEach(b=>b.onclick=()=>{startChat(b.dataset.c);closeSheet()});
+    $("#ncNew").onclick=()=>characterEditor(null,true);
+  });
+}
+function startChat(charId){
+  const c=getChar(charId);const chat={id:uid(),title:c.name,characterIds:[c.id],activeCharId:c.id,personaId:S.defaultPersonaId||S.personas[0]?.id||null,
+    scenario:c.scenario||"",rules:"",style:"",updated:Date.now(),messages:[]};
+  if(c.firstMessage?.trim()){const p=getPersona(chat.personaId);chat.messages.push({id:uid(),role:"char",charId:c.id,content:macro(c.firstMessage,c.name,p?.name||"User"),ts:Date.now()})}
+  S.chats.push(chat);S.activeChatId=chat.id;save();closeDrawer();renderAll();
+}
+
+/* ---------- Character swapper ---------- */
+function swapSheet(){
+  const chat=getChat();if(!chat)return;
+  openSheet("Who speaks next",body=>{
+    const inChat=chat.characterIds.map(getChar).filter(Boolean);const others=S.characters.filter(c=>!chat.characterIds.includes(c.id));
+    body.innerHTML=`<div class="lbl">In this chat</div><div class="list">${inChat.map(c=>`<div class="li ${c.id===chat.activeCharId?"on":""}">${avHTML(c)}<button type="button" class="meta" data-pick="${c.id}" style="border:0;background:none;text-align:left;padding:0"><div class="t">${esc(c.name)}</div><div class="s">${c.id===chat.activeCharId?"Replying now":"Tap to make them reply"}</div></button>${inChat.length>1?`<button type="button" class="btn sm" data-rm="${c.id}">Remove</button>`:""}</div>`).join("")||'<div class="note">No characters in this chat.</div>'}</div>
+      ${others.length?`<div class="lbl">Add to this chat</div><div class="list">${others.map(c=>`<button type="button" class="li" data-add="${c.id}">${avHTML(c,"sm")}<div class="meta"><div class="t">${esc(c.name)}</div></div><span class="pill">Add</span></button>`).join("")}</div>`:""}
+      <div class="lbl">Your persona</div><div class="chips">${S.personas.map(p=>`<button type="button" class="chip ${p.id===chat.personaId?"on":""}" data-persona="${p.id}">${avHTML(p,"sm")}${esc(p.name)}</button>`).join("")}<button type="button" class="chip" id="swNewP">＋ New persona</button></div>
+      <div class="note">Swapping changes who answers your next message. Earlier messages keep the character who wrote them; other characters' lines are shown to the model as their own.</div>`;
+    body.querySelectorAll("[data-pick]").forEach(b=>b.onclick=()=>{chat.activeCharId=b.dataset.pick;save();closeSheet()});
+    body.querySelectorAll("[data-add]").forEach(b=>b.onclick=()=>{chat.characterIds.push(b.dataset.add);chat.activeCharId=b.dataset.add;save();drawSheet()});
+    body.querySelectorAll("[data-rm]").forEach(b=>b.onclick=()=>{chat.characterIds=chat.characterIds.filter(i=>i!==b.dataset.rm);if(chat.activeCharId===b.dataset.rm)chat.activeCharId=chat.characterIds[0];save();drawSheet()});
+    body.querySelectorAll("[data-persona]").forEach(b=>b.onclick=()=>{chat.personaId=b.dataset.persona;save();drawSheet()});
+    $("#swNewP").onclick=()=>personaEditor(null,true);
+  });
+}
+
+/* ---------- Chat settings ---------- */
+function chatSettingsSheet(){
+  const chat=getChat();if(!chat)return;
+  openSheet("Chat settings",body=>{
+    body.innerHTML=`
+      <div class="field"><label for="csTitle">Chat name</label><input type="text" id="csTitle" value="${escA(chat.title)}"></div>
+      <div class="field"><label for="csPersona">You are playing</label><select id="csPersona"><option value="">(no persona)</option>${S.personas.map(p=>`<option value="${p.id}" ${p.id===chat.personaId?"selected":""}>${esc(p.name)}</option>`).join("")}</select></div>
+      <div class="field"><label>Characters</label><button type="button" class="btn" id="csChars">${chat.characterIds.map(getChar).filter(Boolean).map(c=>esc(c.name)).join(", ")||"None"} · Manage</button></div>
+      <div class="field"><label for="csScenario">Scenario</label><textarea id="csScenario" placeholder="Where and when are we? What just happened? What's at stake?">${esc(chat.scenario)}</textarea><div class="help">Shared context for this chat only. Use {{char}} and {{user}} for names.</div></div>
+      <div class="field"><label for="csRules">Rules for this chat</label><textarea id="csRules" placeholder="- {{char}} never lies to {{user}}&#10;- No time skips">${esc(chat.rules)}</textarea><div class="help">Added to your global rules. Rules have the highest priority in the prompt.</div></div>
+      <div class="field"><label for="csStyle">Writing style override</label><textarea id="csStyle" placeholder="Leave empty to use the global style">${esc(chat.style)}</textarea><div class="chips" id="csPresets">${Object.keys(STYLE_PRESETS).map(k=>`<button type="button" class="chip" data-p="${escA(k)}">${esc(k)}</button>`).join("")}</div></div>
+      <button type="button" class="btn" id="csPreview">Preview the full prompt</button>
+      <div class="row"><button type="button" class="btn primary grow" id="csSave">Save</button><button type="button" class="btn danger" id="csDelete">Delete chat</button></div>`;
+    body.querySelectorAll("#csPresets [data-p]").forEach(b=>b.onclick=()=>$("#csStyle").value=STYLE_PRESETS[b.dataset.p]);
+    const apply=()=>{chat.title=$("#csTitle").value.trim()||chat.title;chat.personaId=$("#csPersona").value||null;chat.scenario=$("#csScenario").value;chat.rules=$("#csRules").value;chat.style=$("#csStyle").value;save()};
+    $("#csChars").onclick=()=>{apply();swapSheet()};
+    $("#csPreview").onclick=()=>{apply();previewSheet(chat)};
+    $("#csSave").onclick=()=>{apply();toast("Saved");closeSheet()};
+    $("#csDelete").onclick=async()=>{if(await confirmDlg(`Delete "${chat.title}" and all its messages?`)){S.chats=S.chats.filter(c=>c!==chat);S.activeChatId=[...S.chats].sort((a,b)=>b.updated-a.updated)[0]?.id||null;save();closeSheet()}};
+  });
+}
+function previewSheet(chat){
+  const char=getChar(chat.activeCharId);if(!char){toast("Pick a character first.");return}
+  const r=buildRequest(chat,char,chat.messages);
+  openSheet("Prompt preview",body=>{
+    body.innerHTML=`<div class="note">Exactly what is sent for ${esc(char.name)}'s next reply (latest ${S.settings.contextLimit} messages).</div><div class="lbl">System prompt</div><div class="preview-box">${esc(r.system)}</div><div class="lbl">Conversation (${r.turns.length} turns)</div><div class="preview-box">${esc(r.turns.map(t=>`── ${t.role.toUpperCase()} ──\n${t.content}`).join("\n\n"))}</div>`;
+  },{back:true});
+}
+
+/* ---------- Characters ---------- */
+function charactersSheet(){
+  openSheet("Characters",body=>{
+    body.innerHTML=`<button type="button" class="btn primary" id="chNew">＋ New character</button><div class="list">${S.characters.map(c=>`<button type="button" class="li" data-c="${c.id}">${avHTML(c)}<div class="meta"><div class="t">${esc(c.name)} ${c.example?'<span class="pill">Example</span>':""}</div><div class="s">${esc((c.description||"").replace(/[*]/g,""))}</div></div></button>`).join("")||'<div class="note">No characters yet.</div>'}</div>
+    <div class="row"><button type="button" class="btn sm" id="chImport">Import character JSON</button></div>`;
+    $("#chNew").onclick=()=>characterEditor(null,true);
+    body.querySelectorAll("[data-c]").forEach(b=>b.onclick=()=>characterEditor(b.dataset.c,true));
+    $("#chImport").onclick=importCharacterSheet;
+  });
+}
+function characterEditor(id,back){
+  const existing=id&&getChar(id);
+  const c=existing?clone(existing):{id:uid(),name:"",avatar:"",description:"",personality:"",scenario:"",firstMessage:"",examples:""};
+  openSheet(existing?"Edit character":"New character",body=>{
+    body.innerHTML=`
+      <div class="row"><span id="ceAv">${avHTML(c,"lg")}</span><div class="row"><button type="button" class="btn sm" id="ceUp">Upload picture</button>${c.avatar?'<button type="button" class="btn sm" id="ceRm">Remove</button>':""}</div></div>
+      <div class="field"><label for="ceName">Name</label><input type="text" id="ceName" value="${escA(c.name)}" placeholder="e.g. Captain Mirela Voss"></div>
+      <div class="field"><label for="ceDesc">Description</label><textarea id="ceDesc" placeholder="Appearance, background, role, relationships, what they want.">${esc(c.description)}</textarea></div>
+      <div class="field"><label for="cePers">Personality</label><textarea id="cePers" placeholder="Temperament, values, speech patterns, quirks, fears.">${esc(c.personality)}</textarea></div>
+      <div class="field"><label for="ceScen">Default scenario</label><textarea id="ceScen" placeholder="Copied into each new chat with this character. You can change it per chat.">${esc(c.scenario)}</textarea></div>
+      <div class="field"><label for="ceFirst">First message</label><textarea id="ceFirst" placeholder="How the character opens a new chat. Leave empty to write the first message yourself.">${esc(c.firstMessage)}</textarea></div>
+      <div class="field"><label for="ceEx">Example dialogue</label><textarea id="ceEx" placeholder="<START>&#10;{{user}}: &quot;Hello.&quot;&#10;{{char}}: *She nods.* &quot;...&quot;">${esc(c.examples)}</textarea><div class="help">Teaches the voice. The model is told these exchanges never happened in the story.</div></div>
+      <div class="row"><button type="button" class="btn primary grow" id="ceSave">Save</button>${existing?'<button type="button" class="btn" id="ceChat">Start chat</button><button type="button" class="btn danger" id="ceDel">Delete</button>':""}</div>`;
+    const read=()=>{c.name=$("#ceName").value.trim();c.description=$("#ceDesc").value;c.personality=$("#cePers").value;c.scenario=$("#ceScen").value;c.firstMessage=$("#ceFirst").value;c.examples=$("#ceEx").value};
+    $("#ceUp").onclick=async()=>{read();const img=await pickImage(384);if(img){c.avatar=img;drawSheet()}};
+    if($("#ceRm"))$("#ceRm").onclick=()=>{read();c.avatar="";drawSheet()};
+    const commit=()=>{read();if(!c.name){toast("Give the character a name.");return false}delete c.example;
+      if(existing)Object.assign(existing,c);else S.characters.push(c);save();return true};
+    $("#ceSave").onclick=()=>{if(commit()){toast("Saved");sheetBackFn()}};
+    if(existing){
+      $("#ceChat").onclick=()=>{if(commit()){startChat(c.id);closeSheet()}};
+      $("#ceDel").onclick=async()=>{if(await confirmDlg(`Delete ${existing.name}? Chats keep their messages but this character won't reply in them anymore.`)){
+        S.characters=S.characters.filter(x=>x.id!==existing.id);S.chats.forEach(ch=>{ch.characterIds=ch.characterIds.filter(i=>i!==existing.id);if(ch.activeCharId===existing.id)ch.activeCharId=ch.characterIds[0]||null});save();sheetBackFn()}};
+    }
+  },{back});
+}
+function importCharacterSheet(){
+  openSheet("Import character",body=>{
+    body.innerHTML=`<div class="note">Paste a character as JSON. Storyloom's own export and the common "chara_card_v2" format (name, description, personality, scenario, first_mes, mes_example) both work.</div>
+      <div class="field"><textarea id="icJson" class="tall" placeholder='{"name": "...", "description": "..."}'></textarea></div><button type="button" class="btn primary" id="icGo">Import</button>`;
+    $("#icGo").onclick=()=>{try{let j=JSON.parse($("#icJson").value);if(j.data)j=j.data;
+      const c={id:uid(),name:j.name||"Imported",avatar:j.avatar||"",description:j.description||"",personality:j.personality||"",scenario:j.scenario||"",firstMessage:j.firstMessage??j.first_mes??"",examples:j.examples??j.mes_example??""};
+      S.characters.push(c);save();toast(`Imported ${c.name}`);sheetBackFn()}catch(e){toast("That isn't valid JSON.")}};
+  },{back:true});
+}
+
+/* ---------- Personas ---------- */
+function personasSheet(){
+  openSheet("Personas",body=>{
+    body.innerHTML=`<div class="note">A persona is who <b>you</b> play. The model uses it to react to you, but the character only knows what they learn in the story.</div>
+      <button type="button" class="btn primary" id="peNew">＋ New persona</button><div class="list">${S.personas.map(p=>`<button type="button" class="li" data-p="${p.id}">${avHTML(p)}<div class="meta"><div class="t">${esc(p.name)} ${p.id===S.defaultPersonaId?'<span class="pill acc">Default</span>':""} ${p.example?'<span class="pill">Example</span>':""}</div><div class="s">${esc(p.description)}</div></div></button>`).join("")}</div>`;
+    $("#peNew").onclick=()=>personaEditor(null,true);
+    body.querySelectorAll("[data-p]").forEach(b=>b.onclick=()=>personaEditor(b.dataset.p,true));
+  });
+}
+function personaEditor(id,back){
+  const existing=id&&getPersona(id);
+  const p=existing?clone(existing):{id:uid(),name:"",avatar:"",appearance:"",description:""};
+  openSheet(existing?"Edit persona":"New persona",body=>{
+    body.innerHTML=`<div class="row">${avHTML(p,"lg")}<div class="row"><button type="button" class="btn sm" id="peUp">Upload picture</button>${p.avatar?'<button type="button" class="btn sm" id="peRm">Remove</button>':""}</div></div>
+      <div class="field"><label for="peName">Name</label><input type="text" id="peName" value="${escA(p.name)}"></div>
+      <div class="field"><label for="peApp">Appearance</label><textarea id="peApp" placeholder="Species, build, face, colors, clothing, distinctive marks.">${esc(p.appearance||"")}</textarea><div class="help">Characters can see this, so they can react to how you look.</div></div>
+      <div class="field"><label for="peDesc">Background and personality</label><textarea id="peDesc" placeholder="History, personality, secrets. Characters only learn this through the story.">${esc(p.description)}</textarea></div>
+      <label class="toggle"><span>Use for new chats</span><input type="checkbox" id="peDef" ${S.defaultPersonaId===p.id?"checked":""}></label>
+      <div class="row"><button type="button" class="btn primary grow" id="peSave">Save</button>${existing?'<button type="button" class="btn danger" id="peDel">Delete</button>':""}</div>`;
+    const read=()=>{p.name=$("#peName").value.trim();p.appearance=$("#peApp").value;p.description=$("#peDesc").value};
+    $("#peUp").onclick=async()=>{read();const img=await pickImage(384);if(img){p.avatar=img;drawSheet()}};
+    if($("#peRm"))$("#peRm").onclick=()=>{read();p.avatar="";drawSheet()};
+    $("#peSave").onclick=()=>{read();if(!p.name)return toast("Give the persona a name.");delete p.example;
+      if(existing)Object.assign(existing,p);else S.personas.push(p);
+      if($("#peDef").checked)S.defaultPersonaId=p.id;else if(S.defaultPersonaId===p.id)S.defaultPersonaId=null;
+      const chat=getChat();if(!existing&&chat&&!chat.personaId)chat.personaId=p.id;
+      save();toast("Saved");sheetBackFn()};
+    if(existing)$("#peDel").onclick=async()=>{if(await confirmDlg(`Delete persona ${existing.name}?`)){S.personas=S.personas.filter(x=>x.id!==existing.id);S.chats.forEach(c=>{if(c.personaId===existing.id)c.personaId=null});if(S.defaultPersonaId===existing.id)S.defaultPersonaId=null;save();sheetBackFn()}};
+  },{back});
+}
+
+/* ---------- Settings ---------- */
+function settingsSheet(tab="connection"){
+  openSheet("Settings",(body,cur)=>{({connection:setConn,prompts:setPrompts,appearance:setLook,data:setData})[cur](body)},
+    {tabs:{cur:tab,list:[["connection","Connection"],["prompts","Prompts"],["appearance","Appearance"],["data","Data"]]}});
+}
+function setConn(body){
+  const st=S.settings;
+  const provs=Object.entries(PROVIDERS).filter(([k])=>k!=="builtin"||HAS_CLAUDE);
+  body.innerHTML=`
+    <div class="field"><label for="sProv">Provider</label><select id="sProv">${provs.map(([k,p])=>`<option value="${k}" ${k===st.provider?"selected":""}>${p.label}</option>`).join("")}</select><div class="help" id="sProvNote">${esc(PROVIDERS[st.provider]?.note||"")}</div></div>
+    <div id="sApi" ${st.provider==="builtin"?"hidden":""}>
+      <div style="display:flex;flex-direction:column;gap:14px">
+      <div class="field"><label for="sBase">API base URL</label><input type="text" id="sBase" value="${escA(st.baseUrl)}" autocomplete="off"></div>
+      <div class="field"><label for="sKey">API key</label><div class="row"><input type="password" id="sKey" class="grow" value="${escA(st.apiKey)}" autocomplete="off" style="flex:1;padding:10px 12px;border-radius:10px;border:1px solid var(--border);background:var(--bg)"><button type="button" class="btn sm" id="sShow">Show</button></div><div class="help">Stored only on this device and sent only to the URL above.</div></div>
+      <div class="field"><label for="sModel">Model</label><input type="text" id="sModel" value="${escA(st.model)}" autocomplete="off"></div>
+      <div class="row"><div class="field grow"><label for="sTemp">Temperature <span id="sTempV">${st.temperature}</span></label><input type="range" id="sTemp" min="0" max="1.5" step="0.05" value="${st.temperature}"></div></div>
+      <label class="toggle"><span>Stream replies as they're written</span><input type="checkbox" id="sStream" ${st.stream?"checked":""}></label>
+      ${IS_NATIVE?`<label class="toggle"><span>Direct connection<br><small style="color:var(--muted)">Fixes "Failed to fetch" / CORS errors. Replies appear all at once.</small></span><input type="checkbox" id="sNative" ${st.nativeHttp?"checked":""}></label>`:""}
+      </div>
+    </div>
+    <div class="row"><div class="field grow"><label for="sMax">Max reply tokens</label><input type="number" id="sMax" min="50" max="8000" value="${st.maxTokens}"></div><div class="field grow"><label for="sCtx">Messages in memory</label><input type="number" id="sCtx" min="4" max="1000" value="${st.contextLimit}"></div></div>
+    <label class="toggle"><span>Enter key sends (Shift+Enter for a new line)</span><input type="checkbox" id="sEnter" ${st.enterSends?"checked":""}></label>
+    <div class="row"><button type="button" class="btn primary grow" id="sSave">Save</button><button type="button" class="btn" id="sTest">Test connection</button></div>`;
+  $("#sProv").onchange=()=>{const k=$("#sProv").value,P=PROVIDERS[k];$("#sProvNote").textContent=P.note||"";$("#sApi").hidden=k==="builtin";
+    if(P.baseUrl){$("#sBase").value=P.baseUrl;$("#sModel").value=P.model}if($("#sNative"))$("#sNative").checked=!!P.native};
+  $("#sShow").onclick=()=>{const i=$("#sKey");i.type=i.type==="password"?"text":"password";$("#sShow").textContent=i.type==="password"?"Show":"Hide"};
+  $("#sTemp").oninput=()=>$("#sTempV").textContent=$("#sTemp").value;
+  const apply=()=>{Object.assign(st,{provider:$("#sProv").value,baseUrl:$("#sBase").value.trim(),apiKey:$("#sKey").value.trim(),model:$("#sModel").value.trim(),temperature:+$("#sTemp").value,stream:$("#sStream").checked,nativeHttp:$("#sNative")?$("#sNative").checked:st.nativeHttp,maxTokens:+$("#sMax").value||700,contextLimit:+$("#sCtx").value||80,enterSends:$("#sEnter").checked});save()};
+  $("#sSave").onclick=()=>{apply();toast("Saved");renderComposer()};
+  $("#sTest").onclick=async()=>{apply();const b=$("#sTest");b.disabled=true;b.textContent="Testing…";
+    try{const out=await callModel({system:"Reply with exactly: OK",turns:[{role:"user",content:"Say OK."}]},()=>{});toast("Connected. Model replied: "+String(out).slice(0,40),3500)}
+    catch(e){toast(e.message==="NO_KEY"?"Add an API key first.":"Failed: "+e.message,6000)}finally{b.disabled=false;b.textContent="Test connection"}};
+}
+function setPrompts(body){
+  const p=S.prompts;
+  body.innerHTML=`
+    <div class="note">Placeholders: <b>{{char}}</b> and <b>{{user}}</b> become names everywhere. In the master prompt, <b>{{#rules}}…{{/rules}}</b> blocks are left out when that field is empty.</div>
+    <div class="section-title">Rules</div>
+    <div class="field"><label for="pRules">Global rules (every chat)</label><textarea id="pRules" placeholder="- Never write for {{user}}&#10;- Keep it under 300 words">${esc(p.rules)}</textarea><div class="help">Highest priority in the prompt, and repeated as a reminder right before every reply.</div></div>
+    <div class="section-title">Writing style</div>
+    <div class="chips" id="pPresets">${Object.keys(STYLE_PRESETS).map(k=>`<button type="button" class="chip" data-p="${escA(k)}">${esc(k)}</button>`).join("")}</div>
+    <div class="field"><label for="pStyle">Default writing style</label><textarea id="pStyle">${esc(p.style)}</textarea></div>
+    <div class="section-title">Advanced</div>
+    <div class="field"><label for="pSys">Master system prompt</label><textarea id="pSys" class="tall">${esc(p.system)}</textarea><div class="help">Fields: {{character_card}}, {{other_characters}}, {{user_appearance}}, {{persona}}, {{scenario}}, {{rules}}, {{style}}.</div></div>
+    <div class="field"><label for="pRem">Reminder before each reply</label><textarea id="pRem">${esc(p.reminder)}</textarea><div class="help">Attached to the end of the latest message so the model sees it last. Strongly improves rule-following in long chats. Leave empty to turn off.</div></div>
+    <div class="row"><button type="button" class="btn primary grow" id="pSave">Save</button><button type="button" class="btn" id="pReset">Restore defaults</button></div>
+    ${getChat()?'<button type="button" class="btn" id="pPrev">Preview the full prompt for the current chat</button>':""}`;
+  body.querySelectorAll("#pPresets [data-p]").forEach(b=>b.onclick=()=>$("#pStyle").value=STYLE_PRESETS[b.dataset.p]);
+  const apply=()=>{p.rules=$("#pRules").value;p.style=$("#pStyle").value;p.system=$("#pSys").value;p.reminder=$("#pRem").value;save()};
+  $("#pSave").onclick=()=>{apply();toast("Saved")};
+  $("#pReset").onclick=async()=>{if(await confirmDlg("Restore the default master prompt and reminder? Your rules and style stay.","Restore")){p.system=DEFAULT_SYSTEM;p.reminder=DEFAULT_REMINDER;save();drawSheet();toast("Restored")}};
+  if($("#pPrev"))$("#pPrev").onclick=()=>{apply();previewSheet(getChat())};
+}
+function setLook(body){
+  const t=S.theme;
+  const fontOpts=sel=>{const list=FONTS.includes(sel)?FONTS:[...FONTS,sel];return list.map(f=>`<option ${f===sel?"selected":""}>${esc(f)}</option>`).join("")};
+  body.innerHTML=`
+    <div class="section-title">Presets</div>
+    <div class="chips">${Object.keys(THEME_PRESETS).map(k=>`<button type="button" class="chip" data-preset="${escA(k)}"><span style="width:14px;height:14px;border-radius:50%;background:${THEME_PRESETS[k].accent};border:3px solid ${THEME_PRESETS[k].bg}"></span>${esc(k)}</button>`).join("")}</div>
+    <div class="section-title">Colors</div>
+    <div class="colors">${THEME_KEYS.map(([k,l])=>`<label class="color"><input type="color" data-color="${k}" value="${t[k]}">${esc(l)}</label>`).join("")}</div>
+    <div class="bubble" id="lkSample">${fmt('*She leans on the rail, watching the clouds part.* "We land at dawn," she says. **Not a moment later.**')}</div>
+    <div class="section-title">Fonts</div>
+    <div class="row"><div class="field grow"><label for="lkFC">Story text</label><select id="lkFC">${fontOpts(t.fontChat)}</select></div><div class="field grow"><label for="lkFU">Interface</label><select id="lkFU">${fontOpts(t.fontUI)}</select></div></div>
+    <div class="field"><label for="lkCustom">Any Google Font by name</label><div class="row"><input type="text" id="lkCustom" class="grow" placeholder="e.g. Bitter" style="flex:1;padding:10px 12px;border-radius:10px;border:1px solid var(--border);background:var(--bg)"><button type="button" class="btn sm" data-cf="fontChat">Story</button><button type="button" class="btn sm" data-cf="fontUI">Interface</button></div></div>
+    <div class="field"><label for="lkSize">Text size <span id="lkSizeV">${t.fontSize}px</span></label><input type="range" id="lkSize" min="12" max="24" step="1" value="${t.fontSize}"></div>
+    <div class="section-title">Messages</div>
+    <label class="toggle"><span>Show messages in bubbles</span><input type="checkbox" id="lkBub" ${t.bubbles?"checked":""}></label>
+    <div class="field"><label for="lkAlpha">Bubble opacity</label><input type="range" id="lkAlpha" min="0.2" max="1" step="0.02" value="${t.bubbleAlpha}"></div>
+    <div class="section-title">Images</div>
+    ${IMG_SLOTS.map(([k,l])=>`<div class="imgslot"><span class="thumb" style="${t[k]?`background-image:url('${t[k]}')`:""}"></span><div class="grow">${esc(l)}</div><button type="button" class="btn sm" data-img="${k}">${t[k]?"Replace":"Upload"}</button>${t[k]?`<button type="button" class="btn sm" data-imgrm="${k}">Remove</button>`:""}</div>`).join("")}
+    <div class="field"><label for="lkDim">Background image dimming</label><input type="range" id="lkDim" min="0" max="0.95" step="0.05" value="${t.dim}"></div>`;
+  const live=()=>{applyTheme();save()};
+  body.querySelectorAll("[data-preset]").forEach(b=>b.onclick=()=>{Object.assign(t,THEME_PRESETS[b.dataset.preset]);live();drawSheet()});
+  body.querySelectorAll("[data-color]").forEach(i=>i.oninput=()=>{t[i.dataset.color]=i.value;live()});
+  $("#lkFC").onchange=()=>{t.fontChat=$("#lkFC").value;live()};$("#lkFU").onchange=()=>{t.fontUI=$("#lkFU").value;live()};
+  body.querySelectorAll("[data-cf]").forEach(b=>b.onclick=()=>{const n=$("#lkCustom").value.trim();if(!n)return toast("Type a font name first.");t[b.dataset.cf]=n;live();drawSheet();toast(`Using ${n}. If it looks unchanged, check the spelling on fonts.google.com.`,3500)});
+  $("#lkSize").oninput=()=>{t.fontSize=+$("#lkSize").value;$("#lkSizeV").textContent=t.fontSize+"px";live()};
+  $("#lkBub").onchange=()=>{t.bubbles=$("#lkBub").checked;live()};
+  $("#lkAlpha").oninput=()=>{t.bubbleAlpha=+$("#lkAlpha").value;live()};
+  $("#lkDim").oninput=()=>{t.dim=+$("#lkDim").value;live()};
+  body.querySelectorAll("[data-img]").forEach(b=>b.onclick=async()=>{const slot=IMG_SLOTS.find(s=>s[0]===b.dataset.img);const img=await pickImage(slot[2],slot[3]);if(img){t[slot[0]]=img;live();drawSheet()}});
+  body.querySelectorAll("[data-imgrm]").forEach(b=>b.onclick=()=>{t[b.dataset.imgrm]="";live();drawSheet()});
+}
+function setData(body){
+  const size=new Blob([JSON.stringify(S)]).size;
+  body.innerHTML=`
+    <div class="note">${Store.ok?`Everything is saved on this device (${(size/1024).toFixed(0)} KB). Export a backup now and then, especially before clearing app data.`:"<b>Storage is unavailable here</b>, so changes will be lost when you close the app. Export a backup to keep your work."}</div>
+    <div class="section-title">Backup</div>
+    <div class="row"><button type="button" class="btn primary" id="dExp">Export everything</button><button type="button" class="btn" id="dExpNoKey">Export without API key</button></div>
+    <div id="dOut"></div>
+    <div class="section-title">Restore</div>
+    <div class="row"><button type="button" class="btn" id="dFile">Import from file</button></div>
+    <div class="field"><label for="dPaste">…or paste a backup</label><textarea id="dPaste" class="tall" placeholder='{"v":1, ...}'></textarea></div>
+    <button type="button" class="btn" id="dImp">Restore pasted backup</button>
+    <div class="section-title">Reset</div>
+    <button type="button" class="btn danger" id="dReset">Erase all data</button>`;
+  const doExport=withKey=>{const data=clone(S);if(!withKey)data.settings.apiKey="";const txt=JSON.stringify(data);
+    if(HAS_CLAUDE){claude.use("downloads").then(d=>d&&d.save({filename:`storyloom-backup-${new Date().toISOString().slice(0,10)}.json`,data:txt})).catch(()=>{})}
+    else try{const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([txt],{type:"application/json"}));a.download=`storyloom-backup-${new Date().toISOString().slice(0,10)}.json`;document.body.appendChild(a);a.click();a.remove()}catch(e){}
+    $("#dOut").innerHTML=`<div class="field"><label>If no file downloaded, copy this text and keep it somewhere safe:</label><textarea class="tall" id="dOutTxt" readonly></textarea><button type="button" class="btn sm" id="dCopy">Copy</button></div>`;
+    $("#dOutTxt").value=txt;$("#dCopy").onclick=async()=>{try{await navigator.clipboard.writeText(txt);toast("Copied")}catch(e){$("#dOutTxt").select();toast("Select all and copy")}}};
+  $("#dExp").onclick=()=>doExport(true);$("#dExpNoKey").onclick=()=>doExport(false);
+  const restore=async txt=>{try{const d=JSON.parse(txt);if(!d.chats||!d.characters)throw 0;if(!await confirmDlg("Replace everything on this device with this backup?","Restore"))return;
+    S=migrate(d);save();applyTheme();closeSheet();toast("Backup restored")}catch(e){toast("That doesn't look like a Storyloom backup.")}};
+  $("#dImp").onclick=()=>restore($("#dPaste").value);
+  $("#dFile").onclick=()=>{const i=document.createElement("input");i.type="file";i.accept="application/json,.json,text/plain";i.onchange=()=>{const f=i.files[0];if(!f)return;const r=new FileReader();r.onload=()=>restore(r.result);r.readAsText(f)};i.click()};
+  $("#dReset").onclick=async()=>{if(await confirmDlg("Erase every chat, character, persona and setting? Export a backup first if you might want them.","Erase")){S=defaultState();save();applyTheme();closeSheet();toast("Reset")}};
+}
+
+/* =====================================================================
+   WIRING
+   ===================================================================== */
+function openDrawer(){$("#sidebar").classList.add("open");$("#scrim").classList.add("show");if(IS_NATIVE)history.pushState({drawer:1},"")}
+function closeDrawer(){$("#sidebar").classList.remove("open");$("#scrim").classList.remove("show")}
+$("#menuBtn").onclick=openDrawer;$("#scrim").onclick=closeDrawer;
+$("#newChatBtn").onclick=()=>{closeDrawer();newChatSheet()};
+$("#chatSearch").oninput=renderSidebar;
+$("#chatList").onclick=e=>{const b=e.target.closest("[data-chat]");if(!b)return;S.activeChatId=b.dataset.chat;save();closeDrawer();renderAll()};
+document.querySelectorAll(".sb-nav [data-open]").forEach(b=>b.onclick=()=>{closeDrawer();({characters:charactersSheet,personas:personasSheet,settings:()=>settingsSheet()})[b.dataset.open]()});
+$("#swapBtn").onclick=swapSheet;$("#chatSettingsBtn").onclick=chatSettingsSheet;$("#titleBox").onclick=()=>getChat()?chatSettingsSheet():newChatSheet();
+$("#sendBtn").onclick=send;
+function autoGrow(){const i=$("#input");i.style.height="auto";i.style.height=Math.min(i.scrollHeight,innerHeight*.4)+"px"}
+$("#input").addEventListener("input",autoGrow);
+$("#input").addEventListener("keydown",e=>{if(e.key==="Enter"&&!e.shiftKey&&S.settings.enterSends&&!e.isComposing){e.preventDefault();send()}});
+// Android back button: close the top layer instead of leaving the app
+window.addEventListener("popstate",()=>{if(!$("#confirmBox").hidden){$("#confirmNo").click();return}if(!$("#sheet").hidden){sheetStack.length>1?sheetBackFn():closeSheet();return}closeDrawer()});
+document.addEventListener("keydown",e=>{if(e.key==="Escape"){if(!$("#sheet").hidden)closeSheet();else closeDrawer()}});
+
+(async function init(){
+  await Store.open();
+  let saved=null;try{saved=JSON.parse(await Store.get("state")||"null")}catch(e){}
+  S=saved?migrate(saved):defaultState();
+  try{navigator.storage?.persist?.()}catch(e){}
+  applyTheme();renderAll();
+  if(!Store.ok)toast("Storage is unavailable, so nothing will be saved. Export a backup from Settings › Data.",5000);
+  if(!saved)save();
+})();
+</script>
+</body></html>
