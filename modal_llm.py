@@ -11,8 +11,7 @@ import subprocess
 
 import modal
 
-MODEL = "DavidAU/Qwen3.8-27B-TURBO-Fable-Cold-Fusion-735-882-Heretic-Uncensored-NEO-CODER-MAX-MTP-GGUF
-"
+MODEL = "DavidAU/Qwen3.8-27B-TURBO-Fable-Cold-Fusion-735-882-Heretic-Uncensored-NEO-CODER-MAX-MTP-GGUF"
 GPU = "L40S"
 MAX_LEN = 16384
 
