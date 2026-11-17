@@ -1,0 +1,32 @@
+name: Deploy model to Modal
+on:
+  workflow_dispatch:
+    inputs:
+      model:
+        description: Hugging Face model name
+        default: mistralai/Mistral-Nemo-Instruct-2407
+      gpu:
+        description: GPU (L4, A10G, L40S, A100, H100)
+        default: L40S
+      max_len:
+        description: Context length in tokens
+        default: "16384"
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install modal
+      - name: Deploy
+        env:
+          MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
+          MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
+          IN_MODEL: ${{ inputs.model }}
+          IN_GPU: ${{ inputs.gpu }}
+          IN_LEN: ${{ inputs.max_len }}
+        run: |
+          sed -i "s|^MODEL = .*|MODEL = \"$IN_MODEL\"|; s|^GPU = .*|GPU = \"$IN_GPU\"|; s|^MAX_LEN = .*|MAX_LEN = $IN_LEN|" modal_llm.py
+          grep -E '^(MODEL|GPU|MAX_LEN) =' modal_llm.py
+          modal deploy modal_llm.py
