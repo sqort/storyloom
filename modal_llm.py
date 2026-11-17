@@ -6,8 +6,8 @@ import subprocess
 
 import modal
 
-MODEL = "mistralai/Mistral-Nemo-Instruct-2407"
-GPU = "L40S"
+MODEL = "DavidAU/Qwen3.8-27B-TURBO-Fable-Cold-Fusion-735-882-Heretic-Uncensored-NEO-CODER-MAX-MTP-GGUF"
+GPU = "A100"
 MAX_LEN = 16384
 
 IDLE_MINUTES = 5  # shut the GPU off after this many minutes with no requests
