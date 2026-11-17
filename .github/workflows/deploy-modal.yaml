@@ -4,10 +4,10 @@ on:
     inputs:
       model:
         description: Hugging Face model name
-        default: mistralai/Mistral-Nemo-Instruct-2407
+        default: DavidAU/Qwen3.8-27B-TURBO-Fable-Cold-Fusion-735-882-Heretic-Uncensored-NEO-CODER-MAX-MTP-GGUF
       gpu:
         description: GPU (L4, A10G, L40S, A100, H100)
-        default: L40S
+        default: A100
       max_len:
         description: Context length in tokens
         default: "16384"
@@ -27,6 +27,10 @@ jobs:
           IN_GPU: ${{ inputs.gpu }}
           IN_LEN: ${{ inputs.max_len }}
         run: |
+          # strip stray spaces and line breaks that phone keyboards can add
+          clean() { printf '%s' "$1" | tr -d '\r\n\t"' | sed 's/^ *//; s/ *$//'; }
+          IN_MODEL=$(clean "$IN_MODEL"); IN_GPU=$(clean "$IN_GPU"); IN_LEN=$(clean "$IN_LEN")
           sed -i "s|^MODEL = .*|MODEL = \"$IN_MODEL\"|; s|^GPU = .*|GPU = \"$IN_GPU\"|; s|^MAX_LEN = .*|MAX_LEN = $IN_LEN|" modal_llm.py
           grep -E '^(MODEL|GPU|MAX_LEN) =' modal_llm.py
+          python -m py_compile modal_llm.py
           modal deploy modal_llm.py
