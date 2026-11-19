@@ -978,41 +978,24 @@ function parseImport(text,filename){
     const t=String(text||"").trim();if(!t)throw new Error("The file is empty.");
     j=t; // plain-text prompt
   }
-  const info={notes:new Set(),unsupported:new Set(),parts:[],card:false,scen:false,persona:false};
   const baseName=(filename||"").replace(/\.(json|txt)$/i,"").replace(/\.storyloom-preset$/i,"");
-  let r={format:"",name:baseName||"Imported preset",system:[],post:[],samplers:null,connection:null,storyloom:null};
-  if(typeof j==="string"){r.format="Plain text prompt";r.system.push(convertMacros(j,info));info.parts.push({name:"Prompt text",where:"System prompt"})}
+  const r={format:"",name:baseName||"Imported preset",entries:[],notes0:[],samplers:null,connection:null,storyloom:null,raw:j,orders:null,orderIdx:0,byId:{}};
+  if(typeof j==="string"){r.format="Plain text prompt";r.entries.push({id:"text",name:"Prompt text",text:j,enabled:true,post:false})}
   else if(j&&j.storyloom_preset){r.format="Storyloom preset";r.storyloom=j;r.name=j.name||r.name;
     if(j.settings&&j.settings.model)r.connection=j.settings}
   else if(j&&Array.isArray(j.prompts)){
     const isST=j.prompts.some(p=>p&&p.identifier);
     r.format=isST?"SillyTavern chat preset":"Prompt list";if(j.name)r.name=j.name;
-    const byId=Object.fromEntries(j.prompts.filter(p=>p&&p.identifier).map(p=>[p.identifier,p]));
-    let order=null;
-    if(isST&&Array.isArray(j.prompt_order)&&j.prompt_order.length){const po=j.prompt_order.find(o=>o.character_id===100001)||j.prompt_order[0];order=po.order}
-    if(!order)order=j.prompts.map((p,i)=>({identifier:p.identifier||("#"+i),enabled:p.enabled!==false,_p:p}));
-    let post=false,roleNote=false;
-    for(const o of order){
-      const pr=o._p||byId[o.identifier];const name=pr?.name||o.identifier;
-      if(!pr&&!ST_MARKERS.has(o.identifier))continue;
-      if(o.enabled===false){info.parts.push({name,where:"Off (not imported)"});continue}
-      const id=o.identifier;
-      if(ST_MARKERS.has(id)||pr?.marker){
-        if(id==="chatHistory"){post=true;info.parts.push({name:"Chat history",where:"Chat goes here"});continue}
-        if(post){info.parts.push({name,where:"Skipped (only supported before chat history)"});continue}
-        if(id==="charDescription"||((id==="charPersonality"||id==="dialogueExamples")&&!info.card)){if(!info.card){r.system.push("§CARD§");info.card=true}info.parts.push({name,where:"Character sheet"});continue}
-        if(id==="charPersonality"||id==="dialogueExamples"){info.parts.push({name,where:"Included in character sheet"});continue}
-        if(id==="scenario"){r.system.push("§SCEN§");info.scen=true;info.parts.push({name,where:"Scenario"});continue}
-        if(id==="personaDescription"){r.system.push("§PERSONA§");info.persona=true;info.parts.push({name,where:"Your persona"});continue}
-        if(id.startsWith("worldInfo")){info.notes.add("World info (lorebooks) isn't supported, so those slots were skipped.");info.parts.push({name,where:"Skipped (lorebooks not supported)"});continue}
-        continue;
-      }
-      const txt=convertMacros(pr.content,info).trim();
-      if(!txt){info.parts.push({name,where:"Empty"});continue}
-      if(pr.role&&pr.role!=="system"&&!roleNote){info.notes.add("Prompts set to the user or assistant role were merged into the system prompt.");roleNote=true}
-      (post?r.post:r.system).push(txt);info.parts.push({name,where:post?"Reminder (after chat)":"System prompt"});
+    r.byId=Object.fromEntries(j.prompts.filter(p=>p&&p.identifier).map(p=>[p.identifier,p]));
+    if(isST&&Array.isArray(j.prompt_order)&&j.prompt_order.length){
+      r.orders=j.prompt_order.filter(o=>o&&Array.isArray(o.order));
+      // pick the global list (100001); if it's tiny, pick whichever list has the most prompts
+      let i=r.orders.findIndex(o=>o.character_id===100001);
+      const biggest=r.orders.reduce((b,o,k)=>o.order.length>r.orders[b].order.length?k:b,0);
+      if(i<0||r.orders[i].order.length<3)i=biggest;r.orderIdx=i;
     }
-    if(j.assistant_prefill)info.notes.add("Assistant prefill isn't supported and was skipped.");
+    buildEntries(r);
+    if(j.assistant_prefill)r.notes0.push("Assistant prefill isn't supported and was skipped.");
     if(isST||j.temperature!==undefined){
       const sm={};if(typeof j.temperature==="number")sm.temperature=j.temperature;
       if(j.openai_max_tokens)sm.maxTokens=+j.openai_max_tokens;
@@ -1021,23 +1004,60 @@ function parseImport(text,filename){
       if(j.presence_penalty)sm.presPen=String(j.presence_penalty);
       if(j.reasoning_effort){const m={low:"low",medium:"medium",high:"high",min:"low",minimum:"low",max:"high",maximum:"high"}[String(j.reasoning_effort).toLowerCase()];if(m)sm.reasoning=m}
       const ex=[];if(j.top_k>0)ex.push("top_k");if(j.min_p>0)ex.push("min_p");if(j.repetition_penalty&&j.repetition_penalty!==1)ex.push("repetition_penalty");
-      if(ex.length)info.notes.add(`The file also sets ${ex.join(", ")}. These weren't applied because many providers reject them. Add them under Connection › More sampling settings › Extra request parameters if yours accepts them.`);
+      if(ex.length)r.notes0.push(`The file also sets ${ex.join(", ")}. These weren't applied because many providers reject them. Add them under Connection › More sampling settings › Extra request parameters if yours accepts them.`);
       if(Object.keys(sm).length)r.samplers=sm;
     }
   }
   else if(j&&typeof j==="object"){
     const key=["content","system_prompt","systemPrompt","system","main_prompt","prompt","instructions","text"].find(k=>typeof j[k]==="string"&&j[k].trim());
-    if(key){r.format=j.story_string!==undefined?"Prompt":"System prompt";if(j.name)r.name=j.name;r.system.push(convertMacros(j[key],info));info.parts.push({name:key,where:"System prompt"});
+    if(key){r.format="System prompt";if(j.name)r.name=j.name;r.entries.push({id:key,name:j.name||key,text:j[key],enabled:true,post:false});
       const ph=["post_history","post_history_instructions","postHistory"].find(k=>typeof j[k]==="string"&&j[k].trim());
-      if(ph){r.post.push(convertMacros(j[ph],info));info.parts.push({name:ph,where:"Reminder (after chat)"})}}
+      if(ph)r.entries.push({id:ph,name:"Post-history instructions",text:j[ph],enabled:true,post:true})}
     else if(j.temp!==undefined||j.rep_pen!==undefined||j.genamt!==undefined){
       r.format="Sampler settings only";r.samplers={};if(typeof j.temp==="number")r.samplers.temperature=j.temp;if(j.genamt)r.samplers.maxTokens=+j.genamt;if(typeof j.top_p==="number"&&j.top_p<1)r.samplers.topP=String(j.top_p);
-      info.notes.add("This file has no prompts, only sampler settings. The new preset copies your current prompts.");
+      r.notes0.push("This file has no prompts, only sampler settings. The new preset copies your current prompts.");
     }
     else throw new Error(`Couldn't find a prompt in this file. Its top-level fields are: ${Object.keys(j).slice(0,12).join(", ")||"(none)"}.`);
   }
   else throw new Error("Couldn't read a prompt from this file.");
-  r.info=info;return r;
+  assembleImport(r);return r;
+}
+// Turn the chosen SillyTavern order list into editable entries
+function buildEntries(r){
+  const j=r.raw;
+  const order=r.orders?r.orders[r.orderIdx].order:j.prompts.map((p,i)=>({identifier:p.identifier||("#"+i),enabled:p.enabled!==false,_p:p}));
+  let post=false;r.entries=[];
+  for(const o of order){
+    const pr=o._p||r.byId[o.identifier];const id=o.identifier;
+    if(!pr&&!ST_MARKERS.has(id))continue;
+    if(id==="chatHistory"){post=true;r.entries.push({id,name:"Chat history",fixed:true,enabled:true});continue}
+    r.entries.push({id,name:pr?.name||id,marker:ST_MARKERS.has(id)||!!pr?.marker,text:pr?.content||"",role:pr?.role,enabled:o.enabled!==false,post});
+  }
+}
+// Work out where each enabled entry goes; rerun whenever a switch changes
+function assembleImport(r){
+  const info={notes:new Set(r.notes0),unsupported:new Set(),parts:[],card:false,scen:false,persona:false};
+  r.system=[];r.post=[];let roleNote=false;
+  for(const e of r.entries){
+    const part=(where)=>info.parts.push({e,where});
+    if(e.fixed){part("Chat goes here");continue}
+    if(!e.enabled){part("Off");continue}
+    if(e.marker){
+      const id=e.id;
+      if(e.post){part("Skipped (only works before chat history)");continue}
+      if(id==="charDescription"||((id==="charPersonality"||id==="dialogueExamples")&&!info.card)){if(!info.card){r.system.push("§CARD§");info.card=true}part("Character sheet");continue}
+      if(id==="charPersonality"||id==="dialogueExamples"){part("Included in character sheet");continue}
+      if(id==="scenario"){if(!info.scen){r.system.push("§SCEN§");info.scen=true}part("Scenario");continue}
+      if(id==="personaDescription"){if(!info.persona){r.system.push("§PERSONA§");info.persona=true}part("Your persona");continue}
+      if(id.startsWith("worldInfo")){info.notes.add("World info (lorebooks) isn't supported, so those slots are skipped.");part("Skipped (lorebooks not supported)");continue}
+      part("Skipped");continue;
+    }
+    const txt=convertMacros(e.text,info).trim();
+    if(!txt){part("Empty");continue}
+    if(e.role&&e.role!=="system"&&!roleNote){info.notes.add("Prompts set to the user or assistant role are merged into the system prompt.");roleNote=true}
+    (e.post?r.post:r.system).push(txt);part(e.post?"Reminder (after chat)":"System prompt");
+  }
+  r.info=info;
 }
 function buildImportedPrompts(r,opt){
   if(r.storyloom)return fixPrompts({...clone(S.prompts),...clone(r.storyloom.prompts||{})});
@@ -1062,29 +1082,57 @@ function importPresetSheet(){
     const read=txt=>{try{parsed=parseImport(txt,fname);show()}catch(e){parsed=null;$("#ipOut").innerHTML=`<div class="note" style="border-color:#ff8f8f">${esc(e.message)}<br>If you think this file should work, send it to whoever helps you with the app.</div>`}};
     body.innerHTML=`
       <div class="row"><button type="button" class="btn primary" id="ipFile">Choose .json file</button></div>
-      <div class="field"><label for="ipPaste">…or paste the file's contents</label><textarea id="ipPaste" class="tall" placeholder='{"prompts": [ ... ]}'></textarea><button type="button" class="btn sm" id="ipRead" style="align-self:flex-start">Read pasted text</button></div>
+      <div class="field"><label for="ipPaste">…or paste the file's contents</label><textarea id="ipPaste" class="tall" style="min-height:120px" placeholder='{"prompts": [ ... ]}'></textarea><button type="button" class="btn sm" id="ipRead" style="align-self:flex-start">Read pasted text</button></div>
       <div id="ipOut" style="display:flex;flex-direction:column;gap:12px"></div>`;
     $("#ipFile").onclick=()=>{const inp=document.createElement("input");inp.type="file";inp.accept="application/json,.json,text/plain,.txt";inp.onchange=()=>{const f=inp.files[0];if(!f)return;fname=f.name;const fr=new FileReader();fr.onload=()=>read(fr.result);fr.readAsText(f)};inp.click()};
     $("#ipRead").onclick=()=>{fname="";read($("#ipPaste").value)};
+    const GOOD=/^(System|Reminder|Character|Scenario|Your)/;
+    function partsHTML(){
+      const r=parsed,i=r.info;
+      const togglable=r.entries.filter(e=>!e.fixed);
+      const on=togglable.filter(e=>e.enabled).length;
+      return `
+        ${r.entries.length>1?`<div class="row" style="justify-content:space-between"><div class="lbl">${on} of ${togglable.length} prompts on</div><div class="row" style="gap:6px"><button type="button" class="btn sm" id="ipAllOn">Turn all on</button><button type="button" class="btn sm" id="ipAllOff">Turn all off</button></div></div>
+        <div class="help" style="color:var(--muted);font-size:13px;line-height:1.45">Presets often include alternatives, like several length or style options. Turn on only the ones you want; tap a prompt to read it.</div>`:""}
+        <div class="list">${i.parts.map((p,k)=>{const e=p.e;const snippet=(e.text||"").replace(/\s+/g," ").trim();
+          return `<div class="li" style="padding:8px 10px;flex-direction:column;align-items:stretch;gap:6px">
+            <div class="row" style="flex-wrap:nowrap;gap:10px">
+              ${e.fixed?`<span style="width:22px;flex:none;text-align:center;color:var(--muted)">⋯</span>`:`<input type="checkbox" data-ent="${r.entries.indexOf(e)}" ${e.enabled?"checked":""} aria-label="Use ${escA(e.name)}" style="width:22px;height:22px;flex:none;accent-color:var(--accent)">`}
+              <button type="button" class="meta" data-peek="${k}" style="border:0;background:none;text-align:left;padding:0;min-width:0;flex:1"><div class="t" style="font-weight:600;${e.enabled||e.fixed?"":"opacity:.6"}">${esc(e.name)}</div>${snippet?`<div class="s">${esc(snippet.slice(0,160))}</div>`:e.marker&&!e.fixed?`<div class="s">Slot filled by the app</div>`:""}</button>
+              <span class="pill ${GOOD.test(p.where)?"acc":""}" style="flex:none;max-width:42%;white-space:normal;text-align:center">${esc(p.where)}</span>
+            </div>
+            <div class="preview-box" data-full="${k}" hidden style="max-height:40vh">${esc(e.text||"")}</div>
+          </div>`}).join("")}</div>
+        ${[...i.notes].map(n=>`<div class="note">${esc(n)}</div>`).join("")}
+        ${i.unsupported.size?`<div class="note">These macros aren't supported and were left as written. Edit them out in Prompts if needed: ${esc([...i.unsupported].slice(0,8).join(" "))}</div>`:""}`;
+    }
     function show(){
-      const r=parsed,i=r.info,isSL=!!r.storyloom,samplerOnly=r.format==="Sampler settings only";
-      const unsup=[...i.unsupported];
+      const r=parsed,isSL=!!r.storyloom,samplerOnly=r.format==="Sampler settings only";
       $("#ipOut").innerHTML=`
         <div class="section-title">Found: ${esc(r.format)}</div>
-        ${i.parts.length?`<div class="list">${i.parts.map(p=>`<div class="li" style="padding:8px 10px"><div class="meta"><div class="t" style="font-weight:600">${esc(p.name)}</div></div><span class="pill ${/^(System|Reminder|Character|Scenario|Your)/.test(p.where)?"acc":""}">${esc(p.where)}</span></div>`).join("")}</div>`:""}
-        ${[...i.notes].map(n=>`<div class="note">${esc(n)}</div>`).join("")}
-        ${unsup.length?`<div class="note">These macros aren't supported and were left as written. Edit them out in Prompts if needed: ${esc(unsup.slice(0,8).join(" "))}</div>`:""}
+        ${r.orders&&r.orders.length>1?`<div class="field"><label for="ipOrder">Prompt order to use</label><select id="ipOrder">${r.orders.map((o,k)=>`<option value="${k}" ${k===r.orderIdx?"selected":""}>${o.character_id===100001?"Global order":o.character_id===100000?"Default order":"Order "+(k+1)} (${o.order.filter(x=>x.enabled!==false).length} of ${o.order.length} on)</option>`).join("")}</select><div class="help">The file has more than one ordering. If most prompts are off, try another.</div></div>`:""}
+        <div id="ipParts" style="display:flex;flex-direction:column;gap:12px"></div>
         <div class="field"><label for="ipName">Preset name</label><input type="text" id="ipName" value="${escA(r.name)}"></div>
         ${!isSL&&!samplerOnly?`<label class="toggle"><span>Add Storyloom's character rules<br><small style="color:var(--muted)">Stay in character, never write for you, no meta knowledge. Recommended.</small></span><input type="checkbox" id="ipCore" checked></label>
         <label class="toggle"><span>Keep my current writing style and prose rules<br><small style="color:var(--muted)">Off: the imported prompt decides the style.</small></span><input type="checkbox" id="ipStyle"></label>`:""}
         ${r.samplers?`<label class="toggle"><span>Use the file's sampling settings<br><small style="color:var(--muted)">${esc(Object.entries(r.samplers).map(([k,v])=>`${k}: ${v}`).join(", "))}</small></span><input type="checkbox" id="ipSamp" checked></label>`:""}
         ${r.connection?`<label class="toggle"><span>Use the file's connection<br><small style="color:var(--muted)">${esc(presetSub({settings:r.connection}))}. Off keeps your current provider, key and model.</small></span><input type="checkbox" id="ipConn"></label>`:""}
-        <div class="help" style="color:var(--muted);font-size:13px">Your rules are always kept, and the preset uses your current connection unless you choose otherwise.</div>
+        <div class="help" style="color:var(--muted);font-size:13px">Your rules are always kept, and the preset uses your current connection unless you choose otherwise. You can still edit everything later in Prompts.</div>
         <details><summary class="lbl" style="cursor:pointer">Preview the imported prompt</summary><div class="preview-box" id="ipPrev" style="margin-top:8px"></div></details>
         <button type="button" class="btn primary" id="ipCreate">Create preset and use it</button>`;
       const opts=()=>({addCore:$("#ipCore")?$("#ipCore").checked:true,keepStyle:$("#ipStyle")?$("#ipStyle").checked:false});
       const prev=()=>{const pr=buildImportedPrompts(r,opts());$("#ipPrev").textContent=`── MASTER PROMPT ──\n${pr.system}\n\n── REMINDER ──\n${pr.reminder||"(none)"}`};
-      prev();["ipCore","ipStyle"].forEach(id=>$("#"+id)&&($("#"+id).onchange=prev));
+      const drawParts=()=>{
+        const box=$("#ipParts");box.innerHTML=partsHTML();
+        box.querySelectorAll("[data-ent]").forEach(cb=>cb.onchange=()=>{r.entries[+cb.dataset.ent].enabled=cb.checked;assembleImport(r);drawParts();prev()});
+        box.querySelectorAll("[data-peek]").forEach(b=>b.onclick=()=>{const f=box.querySelector(`[data-full="${b.dataset.peek}"]`);if(f.textContent.trim())f.hidden=!f.hidden});
+        const all=v=>{r.entries.forEach(e=>{if(!e.fixed)e.enabled=v});assembleImport(r);drawParts();prev()};
+        if($("#ipAllOn"))$("#ipAllOn").onclick=()=>all(true);
+        if($("#ipAllOff"))$("#ipAllOff").onclick=()=>all(false);
+      };
+      drawParts();prev();
+      if($("#ipOrder"))$("#ipOrder").onchange=()=>{r.orderIdx=+$("#ipOrder").value;buildEntries(r);assembleImport(r);drawParts();prev()};
+      ["ipCore","ipStyle"].forEach(id=>$("#"+id)&&($("#"+id).onchange=prev));
       $("#ipCreate").onclick=()=>{
         syncPreset();
         const base=clone(S.settings);for(const k of PRESET_SKIP)delete base[k];
